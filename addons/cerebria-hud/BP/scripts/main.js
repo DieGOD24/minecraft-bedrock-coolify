@@ -2,33 +2,34 @@
  * Cerebria HUD
  *
  * 1. Dia, hora del juego, hora real y rumbo en la barra de accion.
- * 2. Waypoints en la BARRA LOCALIZADORA nativa de Bedrock, con haz de luz.
- * 3. Al morir marca la tumba igual, con su propio marcador y haz.
- * 4. La brujula abre el menu: conseguir mapa y gestionar waypoints.
+ * 2. Waypoints en la BARRA LOCALIZADORA nativa, con haz de luz de colores.
+ * 3. Al morir marca la tumba, con marcador y haz propios.
+ * 4. La brujula abre el menu de waypoints.
  *
  * Todo usa @minecraft/server ESTABLE (2.4.0). Nada de Beta APIs, porque activar
  * experimentos marcaria el mundo de forma permanente e irreversible.
  *
- * POR QUE LOS WAYPOINTS SON NATIVOS
- * Antes se dibujaban como texto en la barra de accion, ocupandola todo el tiempo.
- * Eso era una reimplementacion peor de algo que el juego ya resuelve:
- * player.locatorBar es API estable y pinta el marcador en el HUD, con color e
- * icono. El haz usa player.spawnParticle, que la doc describe como "Only visible
- * to the target player": cada uno ve solo sus propios puntos.
+ * TODO EN UN SOLO ARCHIVO a proposito. Al dividirlo en dos con un import relativo,
+ * el pack dejo de cargar entero y hasta el reloj desaparecio: en Bedrock, si un
+ * modulo falla al importar no corre NADA. El unico addon con scripts que funciona
+ * en este servidor, WAILA, es un unico bundle sin imports relativos. No dividir.
  *
- * TODO EN UN SOLO ARCHIVO a proposito. Al dividirlo en main.js + mapa.js con un
- * import relativo, el pack dejo de cargar entero y hasta el reloj desaparecio. El
- * unico addon con scripts que funciona en este servidor, WAILA, es un unico bundle
- * sin imports relativos. No dividir esto.
+ * SIN TOPE DE WAYPOINTS
+ * Antes guardaba con `lista.slice(0, 20)`: a partir del waypoint 21 se descartaban
+ * EN SILENCIO al guardar. Eso era el "se buguea". Ya no hay recorte.
+ * La barra del HUD si tiene un maxCount que impone Bedrock y no se puede quitar,
+ * pero se llena con los puntos de TU dimension ordenados del mas cercano, asi que
+ * en la practica no estorba. El numero real se muestra en el menu.
  *
- * POR QUE EL MAPA NO LO DIBUJA EL ADDON
- * Bedrock no tiene puente script->UI para dibujar: solo se puede empujar texto.
- * Una cuadricula de caracteres quedaba fea (los codigos § dan 28 colores contra
- * los 248 de un mapa real, y las filas quedan separadas). Lo que si se ve bien es
- * el mapa de Minecraft, asi que el addon te entrega uno.
+ * SIN CODIGOS § EN LOS BOTONES
+ * Un "§7Volver" quedaba gris sobre boton gris: invisible. Bedrock aplica su propio
+ * estilo a los botones, asi que el color ahi no es fiable. Va solo en el cuerpo de
+ * los formularios y en los mensajes de chat.
  */
 
-import { world, system, LocationWaypoint, WaypointTexture } from "@minecraft/server";
+import {
+  world, system, LocationWaypoint, WaypointTexture, MolangVariableMap
+} from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 
 const PROP_TUMBA = "cerebria:tumba";        // "x,y,z,dimensionId"
@@ -36,12 +37,13 @@ const PROP_WAYPOINTS = "cerebria:waypoints";
 
 const RADIO_LLEGADA = 4;        // bloques: a esta distancia la tumba se da por hallada
 const UTC_OFFSET_HORAS = -5;    // Colombia, sin horario de verano
+const MAX_LARGO_NOMBRE = 20;    // recorte del NOMBRE, no de la cantidad
 
-// Haz de luz. Acotado a proposito: mas alla de ~96 bloques el cliente no lo
-// renderiza igual, asi que emitir seria gastar por nada.
-const HAZ_DISTANCIA = 96;
-const HAZ_ALTURA = 40;
-const HAZ_PASO = 2;
+// Haz de luz. Se corta a 128 bloques porque mas lejos el cliente no lo renderiza
+// igual y emitir seria gasto puro.
+const HAZ_DISTANCIA = 128;
+const HAZ_ALTURA = 90;
+const HAZ_PASO = 3;             // ~30 particulas por punto cercano
 const HAZ_INTERVALO = 10;       // ticks
 
 const COLORES = [
@@ -56,6 +58,10 @@ const COLORES = [
   { n: "Rosa",     rgb: { red: 1.0, green: 0.5,  blue: 0.8 } }
 ];
 const COLOR_TUMBA = { red: 1.0, green: 0.15, blue: 0.15 };
+
+function colorDe(w) {
+  return (COLORES[w.c] || COLORES[0]);
+}
 
 function selectorTextura(textura) {
   return { textureBoundsList: [{ lowerBound: 0, texture: textura }] };
@@ -149,20 +155,53 @@ function leerWaypoints(player) {
   }
 }
 
+// SIN recorte de cantidad: antes habia un slice(0, 20) que descartaba en silencio
+// todo lo que pasara de 20 waypoints.
 function guardarWaypoints(player, lista) {
-  player.setDynamicProperty(PROP_WAYPOINTS, JSON.stringify(lista.slice(0, 20)));
+  player.setDynamicProperty(PROP_WAYPOINTS, JSON.stringify(lista));
   sincronizarBarra(player);
+}
+
+// Devuelve pares {w, i} para poder editar por indice real aunque la vista este
+// filtrada por dimension.
+function waypointsDe(player, dimensionId, ordenarPorDistancia) {
+  const lista = leerWaypoints(player);
+  const salida = [];
+  for (let i = 0; i < lista.length; i++) {
+    if (dimensionId && lista[i].d !== dimensionId) continue;
+    salida.push({ w: lista[i], i: i });
+  }
+  if (ordenarPorDistancia) {
+    const yo = player.location;
+    salida.sort(function (a, b) {
+      return distancia(yo, a.w) - distancia(yo, b.w);
+    });
+  }
+  return salida;
+}
+
+function waypointsDeOtrasDimensiones(player) {
+  const lista = leerWaypoints(player);
+  const salida = [];
+  for (let i = 0; i < lista.length; i++) {
+    if (lista[i].d !== player.dimension.id) salida.push({ w: lista[i], i: i });
+  }
+  return salida;
 }
 
 /* ---------- barra localizadora nativa ---------- */
 /*
- * La barra NO persiste entre sesiones: la doc avisa que los waypoints invalidos se
- * limpian al tick siguiente. Por eso hay que re-sincronizarla al entrar, al
- * reaparecer y al cambiar de dimension, ademas de en cada cambio.
+ * Solo entran los puntos de la dimension ACTUAL, ordenados del mas cercano. Antes
+ * se metian los de todas las dimensiones: la doc avisa que los invalidos se
+ * limpian al tick siguiente, pero ANTES consumen cupo del maxCount y desplazan a
+ * los que si deberian verse. Eso hacia que se portara raro al cambiar de mundo.
  *
- * Se borra todo y se vuelve a añadir porque `removeAllWaypoints` solo alcanza a
- * los waypoints de ESTE pack ("You can only modify, remove, or query waypoints
- * that were added by this pack"), asi que es seguro e idempotente.
+ * Se borra todo y se repuebla porque removeAllWaypoints solo alcanza a los de ESTE
+ * pack ("You can only modify, remove, or query waypoints that were added by this
+ * pack"), asi que es seguro e idempotente.
+ *
+ * La barra NO persiste entre sesiones: hay que rellenarla al entrar, al reaparecer
+ * y al cambiar de dimension.
  */
 function sincronizarBarra(player) {
   let barra;
@@ -175,63 +214,77 @@ function sincronizarBarra(player) {
     return;
   }
 
+  const dim = player.dimension;
   const puntos = [];
-  for (const w of leerWaypoints(player)) {
+
+  for (const par of waypointsDe(player, dim.id, true)) {
     puntos.push({
-      loc: { dimension: dimensionDe(w.d), x: w.x, y: w.y, z: w.z },
+      loc: { dimension: dim, x: par.w.x, y: par.w.y, z: par.w.z },
       textura: WaypointTexture.Square,
-      color: (COLORES[w.c] || COLORES[0]).rgb
+      color: colorDe(par.w).rgb
     });
   }
+
+  // La tumba va primera si esta en esta dimension: es la que mas urge encontrar.
   const t = leerTumba(player);
-  if (t) {
-    puntos.push({
-      loc: { dimension: dimensionDe(t.d), x: t.x, y: t.y, z: t.z },
+  if (t && t.d === dim.id) {
+    puntos.unshift({
+      loc: { dimension: dim, x: t.x, y: t.y, z: t.z },
       textura: WaypointTexture.SmallStar,
       color: COLOR_TUMBA
     });
   }
 
   for (const p of puntos) {
-    if (!p.loc.dimension) continue;
-    // maxCount es un tope real: addWaypoint lanza error al pasarse.
-    if (barra.maxCount && barra.count >= barra.maxCount) {
-      player.sendMessage("§7La barra localizadora esta llena; algunos puntos no se muestran.");
-      break;
-    }
+    // maxCount es un tope real de Bedrock: addWaypoint lanza error al pasarse.
+    // Al venir ordenado por cercania, lo que se corta es siempre lo mas lejano.
+    if (barra.maxCount && barra.count >= barra.maxCount) break;
     try {
       barra.addWaypoint(new LocationWaypoint(p.loc, selectorTextura(p.textura), p.color));
     } catch (e) {
-      console.warn(`[cerebria-hud] no pude añadir un waypoint a la barra: ${e}`);
+      console.warn(`[cerebria-hud] no pude anadir un waypoint a la barra: ${e}`);
     }
   }
 }
 
-function dimensionDe(id) {
+function estadoBarra(player) {
   try {
-    return world.getDimension(id);
+    const b = player.locatorBar;
+    if (!b) return "";
+    return `§7Barra: §f${b.count}/${b.maxCount}`;
   } catch (e) {
-    return undefined;
+    return "";
   }
 }
 
-/* ---------- haz de luz ---------- */
+/* ---------- haz de luz de colores ---------- */
 /*
  * player.spawnParticle es privado del jugador ("Only visible to the target
- * player"), asi que cada uno ve solo sus puntos y no se ensucia la pantalla ajena.
+ * player"), asi que cada uno ve solo sus puntos.
+ *
+ * colored_flame_particle + MolangVariableMap.setColorRGB("variable.color", ...)
+ * sale del ejemplo oficial de Microsoft para Player.spawnParticle. Es lo que
+ * permite que el haz salga DEL COLOR elegido en vez de blanco fijo.
+ *
+ * Aviso: es una hilera de llamas de color, no la columna translucida de un beacon
+ * de verdad. Sin una particula propia en un resource pack, es lo mas cercano.
  */
-function emitirHaz(player, punto, particula) {
+function emitirHaz(player, punto, rgb) {
   if (punto.d !== player.dimension.id) return;
   if (distancia(player.location, punto) > HAZ_DISTANCIA) return;
+
+  const molang = new MolangVariableMap();
+  molang.setColorRGB("variable.color", rgb);
+
   for (let dy = 0; dy < HAZ_ALTURA; dy += HAZ_PASO) {
     try {
-      player.spawnParticle(particula, {
+      player.spawnParticle("minecraft:colored_flame_particle", {
         x: punto.x + 0.5,
         y: punto.y + dy,
         z: punto.z + 0.5
-      });
+      }, molang);
     } catch (e) {
-      // Chunk sin cargar o fuera del mundo: se corta el haz, no se rompe el ciclo.
+      // Chunk sin cargar o fuera del mundo: se corta el haz, no el ciclo.
       return;
     }
   }
@@ -240,58 +293,31 @@ function emitirHaz(player, punto, particula) {
 system.runInterval(() => {
   for (const player of world.getAllPlayers()) {
     try {
-      for (const w of leerWaypoints(player)) emitirHaz(player, w, "minecraft:endrod");
+      for (const par of waypointsDe(player, player.dimension.id, false)) {
+        emitirHaz(player, par.w, colorDe(par.w).rgb);
+      }
       const t = leerTumba(player);
-      if (t) emitirHaz(player, t, "minecraft:basic_flame_particle");
+      if (t) emitirHaz(player, t, COLOR_TUMBA);
     } catch (e) {
       // Un jugador que se desconecta a mitad del tick no debe romper el resto.
     }
   }
 }, HAZ_INTERVALO);
 
-/* ---------- entrega del mapa localizador ---------- */
-/*
- * El valor auxiliar del item no esta documentado de forma fiable, asi que se
- * prueban variantes y se usa la primera que el servidor acepta. Verificado por
- * consola: `give "<nombre>" empty_map 1 2` tiene sintaxis valida.
- */
-const VARIANTES_MAPA = [
-  ["empty_map", 2, "mapa localizador vacio"],
-  ["empty_map", 1, "mapa vacio (variante 1)"],
-  ["empty_map", 0, "mapa vacio"]
-];
-
-function darMapa(player) {
-  const nombre = player.name.replace(/"/g, "");
-  for (const v of VARIANTES_MAPA) {
-    const cmd = `give "${nombre}" ${v[0]} 1 ${v[1]}`;
-    try {
-      const r = player.dimension.runCommand(cmd);
-      if (r && r.successCount > 0) {
-        player.sendMessage(`§aTe di un §f${v[2]}§a.`);
-        player.sendMessage("§7Usalo (mantene presionado) para crear el mapa, " +
-                           "y despues sostenelo en la mano para verlo.");
-        return true;
-      }
-    } catch (e) {
-      // Variante no aceptada por esta version; se prueba la siguiente.
-    }
-  }
-  player.sendMessage("§cNo pude darte el mapa por comando.");
-  player.sendMessage("§7Hacelo a mano: papel + brujula en una mesa de cartografia.");
-  return false;
-}
-
 /* ---------- menu principal (brujula) ---------- */
 
 function abrirMenu(player) {
-  const wps = leerWaypoints(player);
+  const aqui = waypointsDe(player, player.dimension.id, true).length;
+  const otras = waypointsDeOtrasDimensiones(player).length;
   const t = leerTumba(player);
   const l = player.location;
 
   let cuerpo = `§7Estas en §f${Math.floor(l.x)} ${Math.floor(l.y)} ${Math.floor(l.z)} ` +
                `§7(${nombreDimension(player.dimension.id)})\n` +
-               `§7Mirando al §f${rumboDesdeYaw(player.getRotation().y)}`;
+               `§7Mirando al §f${rumboDesdeYaw(player.getRotation().y)}\n` +
+               `§7Waypoints aqui: §f${aqui}§7, en otras dimensiones: §f${otras}`;
+  const eb = estadoBarra(player);
+  if (eb) cuerpo += `\n${eb}`;
   if (t) {
     cuerpo += `\n§cTumba: §f${t.x} ${t.y} ${t.z}`;
     cuerpo += t.d === player.dimension.id
@@ -302,15 +328,13 @@ function abrirMenu(player) {
   new ActionFormData()
     .title("Brujula")
     .body(cuerpo)
-    .button("Conseguir mapa")
     .button("Marcar este lugar")
-    .button(`Mis waypoints (${wps.length})`)
+    .button(`Mis waypoints (${aqui})`)
     .button("Cerrar")
     .show(player).then(function (res) {
       if (res.canceled) return;
-      if (res.selection === 0) darMapa(player);
-      else if (res.selection === 1) marcarAqui(player);
-      else if (res.selection === 2) listarWaypoints(player);
+      if (res.selection === 0) marcarAqui(player);
+      else if (res.selection === 1) listarWaypoints(player);
     }).catch(function () {});
 }
 
@@ -322,7 +346,7 @@ function marcarAqui(player) {
   new ModalFormData()
     .title("Marcar lugar")
     .textField(etiqueta, "casa")
-    .dropdown("Color del marcador", nombresColor, { defaultValueIndex: 4 })
+    .dropdown("Color del marcador y del haz", nombresColor, { defaultValueIndex: 4 })
     .show(player).then(function (res) {
       if (res.canceled) return;
       const valores = res.formValues || [];
@@ -331,41 +355,86 @@ function marcarAqui(player) {
       const color = typeof valores[1] === "number" ? valores[1] : 4;
       const lista = leerWaypoints(player);
       lista.push({
-        n: nombre.slice(0, 20),
+        n: nombre.slice(0, MAX_LARGO_NOMBRE),
         x: Math.floor(l.x), y: Math.floor(l.y), z: Math.floor(l.z),
         d: player.dimension.id,
         c: color
       });
       guardarWaypoints(player, lista);
-      player.sendMessage(`§eWaypoint §f${nombre}§e guardado (${COLORES[color].n}).`);
+      player.sendMessage(
+        `§eWaypoint §f${nombre}§e guardado (${COLORES[color].n}). ` +
+        `§7Total: ${lista.length}`
+      );
     }).catch(function () {});
 }
 
-/* ---------- lista y menu de cada waypoint ---------- */
+/* ---------- listas ---------- */
+
+function etiquetaWaypoint(player, w, conDimension) {
+  const mismaDim = w.d === player.dimension.id;
+  const detalle = mismaDim
+    ? `${distancia(player.location, w)}m ${rumboHacia(player.location, w)}`
+    : nombreDimension(w.d);
+  const sufijo = conDimension && mismaDim ? ` - ${nombreDimension(w.d)}` : "";
+  return `${w.n}\n§7${w.x} ${w.y} ${w.z} - ${detalle}${sufijo}`;
+}
 
 function listarWaypoints(player) {
-  const lista = leerWaypoints(player);
-  if (lista.length === 0) {
+  const pares = waypointsDe(player, player.dimension.id, true);
+  const otras = waypointsDeOtrasDimensiones(player);
+
+  if (pares.length === 0 && otras.length === 0) {
     player.sendMessage("§7No tenes waypoints. Usa \"Marcar este lugar\".");
     return;
   }
-  const f = new ActionFormData().title("Waypoints").body("§7Toca uno para abrirlo.");
-  for (const w of lista) {
-    const detalle = w.d === player.dimension.id
-      ? `${distancia(player.location, w)}m ${rumboHacia(player.location, w)}`
-      : nombreDimension(w.d);
-    f.button(`${w.n}\n§7${w.x} ${w.y} ${w.z} - ${detalle}`);
-  }
-  f.button("§7Volver");
+
+  let cuerpo = `§7${nombreDimension(player.dimension.id)}: §f${pares.length}§7 puntos, ` +
+               `del mas cercano al mas lejano.`;
+  const eb = estadoBarra(player);
+  if (eb) cuerpo += `\n${eb}§7 visibles en el HUD.`;
+
+  const f = new ActionFormData().title("Waypoints").body(cuerpo);
+  for (const par of pares) f.button(etiquetaWaypoint(player, par.w, false));
+  if (otras.length > 0) f.button(`Otras dimensiones (${otras.length})`);
+  f.button("Volver");
 
   f.show(player).then(function (res) {
     if (res.canceled) return;
-    if (res.selection === lista.length) { abrirMenu(player); return; }
-    menuWaypoint(player, res.selection);
+    if (res.selection < pares.length) {
+      menuWaypoint(player, pares[res.selection].i);
+      return;
+    }
+    if (otras.length > 0 && res.selection === pares.length) {
+      listarOtrasDimensiones(player);
+      return;
+    }
+    abrirMenu(player);
   }).catch(function () {});
 }
 
-// Tocar un waypoint YA NO lo borra: abre este menu.
+// Permite administrar puntos de otras dimensiones sin tener que viajar hasta alla.
+function listarOtrasDimensiones(player) {
+  const pares = waypointsDeOtrasDimensiones(player);
+  if (pares.length === 0) { listarWaypoints(player); return; }
+
+  const f = new ActionFormData()
+    .title("Otras dimensiones")
+    .body("§7Podes renombrar, cambiar color o borrar.\n" +
+          "§7Para viajar tenes que estar en la misma dimension.");
+  for (const par of pares) {
+    f.button(`${par.w.n}\n§7${par.w.x} ${par.w.y} ${par.w.z} - ${nombreDimension(par.w.d)}`);
+  }
+  f.button("Volver");
+
+  f.show(player).then(function (res) {
+    if (res.canceled) return;
+    if (res.selection < pares.length) menuWaypoint(player, pares[res.selection].i);
+    else listarWaypoints(player);
+  }).catch(function () {});
+}
+
+/* ---------- menu de un waypoint ---------- */
+
 function menuWaypoint(player, indice) {
   const lista = leerWaypoints(player);
   const w = lista[indice];
@@ -375,22 +444,33 @@ function menuWaypoint(player, indice) {
   const cuerpo = `§f${w.n}\n§7${w.x} ${w.y} ${w.z} (${nombreDimension(w.d)})\n` +
                  (mismaDim
                    ? `§7A ${distancia(player.location, w)}m hacia el ${rumboHacia(player.location, w)}`
-                   : "§7En otra dimension") +
-                 `\n§7Color: §f${(COLORES[w.c] || COLORES[0]).n}`;
+                   : `§6Estas en ${nombreDimension(player.dimension.id)}, este punto esta en ${nombreDimension(w.d)}`) +
+                 `\n§7Color: §f${colorDe(w).n}`;
 
+  // El boton se deja visible aunque no se pueda viajar: uno ausente deja al
+  // jugador sin saber si es un fallo. Al tocarlo explica por que.
   new ActionFormData()
     .title(w.n)
     .body(cuerpo)
-    .button("Ir aqui")
+    .button(mismaDim ? "Ir aqui" : "Ir aqui (otra dimension)")
     .button("Renombrar")
     .button("Mover aqui")
     .button("Cambiar color")
     .button("Borrar")
-    .button("§7Volver")
+    .button("Volver")
     .show(player).then(function (res) {
       if (res.canceled) return;
-      if (res.selection === 0) confirmarViaje(player, indice);
-      else if (res.selection === 1) renombrar(player, indice);
+      if (res.selection === 0) {
+        if (!mismaDim) {
+          player.sendMessage(
+            `§6No puedo llevarte: §f${w.n}§6 esta en ${nombreDimension(w.d)} ` +
+            `y vos estas en ${nombreDimension(player.dimension.id)}.`
+          );
+          player.sendMessage("§7Viaja por un portal y desde alli podras usarlo.");
+          return;
+        }
+        confirmarViaje(player, indice);
+      } else if (res.selection === 1) renombrar(player, indice);
       else if (res.selection === 2) moverAqui(player, indice);
       else if (res.selection === 3) cambiarColor(player, indice);
       else if (res.selection === 4) confirmarBorrado(player, indice);
@@ -407,8 +487,8 @@ function confirmarViaje(player, indice) {
     .title("Ir aqui")
     .body(`§7Te vas a teletransportar a §f${w.n}\n§7${w.x} ${w.y} ${w.z} ` +
           `(${nombreDimension(w.d)})`)
-    .button("§aSi, llevame")
-    .button("§cCancelar")
+    .button("Si, llevame")
+    .button("Cancelar")
     .show(player).then(function (res) {
       if (res.canceled || res.selection !== 0) return;
       viajar(player, w);
@@ -416,10 +496,15 @@ function confirmarViaje(player, indice) {
 }
 
 function viajar(player, w) {
+  // Doble comprobacion: entre abrir el menu y confirmar, el jugador pudo cambiar
+  // de dimension.
+  if (w.d !== player.dimension.id) {
+    player.sendMessage("§6Cambiaste de dimension; el viaje se cancelo.");
+    return;
+  }
   const destino = { x: w.x + 0.5, y: w.y + 1, z: w.z + 0.5 };
-  const dim = dimensionDe(w.d);
   try {
-    player.teleport(destino, dim ? { dimension: dim } : undefined);
+    player.teleport(destino);
     player.sendMessage(`§aTe llevaste a §f${w.n}§a.`);
     return;
   } catch (e) {
@@ -450,7 +535,7 @@ function renombrar(player, indice) {
       const nombre = bruto.trim();
       if (!nombre) { player.sendMessage("§7Nombre vacio, no se cambio nada."); return; }
       const anterior = w.n;
-      w.n = nombre.slice(0, 20);
+      w.n = nombre.slice(0, MAX_LARGO_NOMBRE);
       guardarWaypoints(player, lista);
       player.sendMessage(`§7Waypoint §f${anterior}§7 ahora se llama §f${w.n}§7.`);
     }).catch(function () {});
@@ -461,10 +546,16 @@ function moverAqui(player, indice) {
   const w = lista[indice];
   if (!w) return;
   const l = player.location;
+  const dimAnterior = w.d;
   w.x = Math.floor(l.x); w.y = Math.floor(l.y); w.z = Math.floor(l.z);
   w.d = player.dimension.id;
   guardarWaypoints(player, lista);
   player.sendMessage(`§eWaypoint §f${w.n}§e movido a §f${w.x} ${w.y} ${w.z}§e.`);
+  if (dimAnterior !== w.d) {
+    player.sendMessage(
+      `§7Cambio de ${nombreDimension(dimAnterior)} a ${nombreDimension(w.d)}.`
+    );
+  }
 }
 
 function cambiarColor(player, indice) {
@@ -473,7 +564,7 @@ function cambiarColor(player, indice) {
   if (!w) return;
   const f = new ActionFormData().title("Color").body(`§7Color de §f${w.n}`);
   for (const c of COLORES) f.button(c.n);
-  f.button("§7Volver");
+  f.button("Volver");
   f.show(player).then(function (res) {
     if (res.canceled) return;
     if (res.selection >= COLORES.length) { menuWaypoint(player, indice); return; }
@@ -489,7 +580,7 @@ function confirmarBorrado(player, indice) {
   new ActionFormData()
     .title("Borrar")
     .body(`§7Vas a borrar §f${w.n}§7. Esto no se puede deshacer.`)
-    .button("§cSi, borrar")
+    .button("Si, borrar")
     .button("Cancelar")
     .show(player).then(function (res) {
       if (res.canceled || res.selection !== 0) return;
@@ -516,7 +607,7 @@ world.afterEvents.entityDie.subscribe((ev) => {
       `§c* Moriste en §f${Math.floor(loc.x)} ${Math.floor(loc.y)} ${Math.floor(loc.z)} ` +
       `§7(${nombreDimension(dim)})`
     );
-    e.sendMessage("§7Segui la estrella roja de la barra y el haz de fuego.");
+    e.sendMessage("§7Segui la estrella roja de la barra y el haz rojo.");
     sincronizarBarra(e);
   } catch (err) {
     console.warn(`[cerebria-hud] no pude guardar la tumba: ${err}`);
@@ -537,6 +628,7 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
   );
 });
 
+// Cada dimension muestra sus propios puntos, asi que al cruzar hay que repoblar.
 world.afterEvents.playerDimensionChange.subscribe((ev) => {
   try {
     sincronizarBarra(ev.player);
@@ -558,10 +650,10 @@ world.afterEvents.itemUse.subscribe((ev) => {
 
 /* ---------- barra de accion ---------- */
 /*
- * Queda limpia: solo dia, hora y rumbo. Los waypoints y la tumba ya no se dibujan
- * aqui porque tienen marcador nativo en la barra localizadora y haz de luz.
- * La barra de accion de Bedrock es de UNA sola linea (el multilinea es una
- * peticion abierta, no una funcion), asi que el espacio es escaso.
+ * Solo dia, hora y rumbo. Los waypoints y la tumba no se dibujan aqui: tienen
+ * marcador nativo en la barra localizadora y haz de luz. La barra de accion de
+ * Bedrock es de UNA sola linea (el multilinea es una peticion abierta, no una
+ * funcion), asi que el espacio es escaso.
  */
 system.runInterval(() => {
   const dia = world.getDay();

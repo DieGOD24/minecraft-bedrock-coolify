@@ -219,3 +219,48 @@ Abre un submenu: ir aqui (con confirmacion), renombrar, mover aqui
 
 El teletransporte usa `player.teleport()` con respaldo por `tp` en comando. La
 confirmacion esta a proposito: un toque accidental en survival puede costar caro.
+
+## Waypoints: el tope de 20 era un bug propio
+
+`guardarWaypoints()` guardaba con `JSON.stringify(lista.slice(0, 20))`. Ese recorte
+lo puse yo, no Bedrock: **a partir del waypoint 21 se descartaban EN SILENCIO al
+guardar**, sin aviso ni error. Ya no hay recorte de cantidad. Lo que si sigue
+recortado es el **nombre** a 20 caracteres, que es otra cosa.
+
+### El tope que si existe, y no se puede quitar
+
+`player.locatorBar` tiene un `maxCount` impuesto por Bedrock. No se puede subir.
+La mitigacion: la barra se llena **solo con los puntos de la dimension actual,
+ordenados del mas cercano**, asi que lo que se corta es siempre lo mas lejano.
+El menu muestra `Barra: N/M` para que el numero real este a la vista: la
+documentacion no lo publica.
+
+### Un segundo bug, encadenado al primero
+
+`sincronizarBarra()` metia en la barra los waypoints de **todas** las dimensiones.
+La doc avisa que los invalidos se limpian al tick siguiente, pero **antes consumen
+cupo** del `maxCount` y desplazan a los que si deberian verse. Eso explicaba el
+comportamiento raro al cambiar de dimension. Ahora filtra por dimension antes de
+tocar la barra.
+
+## Nada de codigos § en los botones
+
+Un boton etiquetado `§7Volver` quedaba **gris sobre boton gris: invisible**.
+Bedrock aplica su propio estilo a los botones, asi que el color ahi no es fiable.
+Regla: `§` solo en el **cuerpo** de los formularios y en los mensajes de chat.
+En los botones se admite unicamente en la **segunda linea** (el detalle bajo el
+nombre), donde la primera linea sigue siendo legible.
+
+## Haz de luz de colores
+
+`minecraft:colored_flame_particle` con
+`MolangVariableMap.setColorRGB("variable.color", rgb)` — combinacion tomada del
+**ejemplo oficial de Microsoft** para `Player.spawnParticle`. Antes era
+`minecraft:endrod`, que es blanco fijo y no admite color.
+
+Columna de 90 bloques, una particula cada 3, dos veces por segundo (~30 por punto),
+solo dentro de 128 bloques.
+
+**Limitacion**: es una hilera de llamas del color elegido, no la columna
+translucida de un beacon de verdad. Sin definir una particula propia en un resource
+pack, es lo mas cercano que permite la API.

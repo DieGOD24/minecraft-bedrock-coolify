@@ -264,3 +264,32 @@ solo dentro de 128 bloques.
 **Limitacion**: es una hilera de llamas del color elegido, no la columna
 translucida de un beacon de verdad. Sin definir una particula propia en un resource
 pack, es lo mas cercano que permite la API.
+
+## La brujula se entrega al reaparecer
+
+La brujula es la **unica** via de entrada al sistema de waypoints: todo cuelga de
+`afterEvents.itemUse` con `minecraft:compass`. Al morir sin `keepinventory` se
+pierde, y con ella queda inaccesible marcar, renombrar, viajar... justo cuando mas
+hacen falta los waypoints para volver a la tumba. Era un agujero de diseño.
+
+`asegurarBrujula()` corre en `playerSpawn`, **antes** del early return de
+`initialSpawn`, asi que aplica tambien al entrar: un jugador nuevo sin brujula no
+puede usar el sistema en absoluto.
+
+### Tres detalles que no son obvios
+
+**Va con retardo (`system.runTimeout(..., 10)`).** Dar objetos exactamente en el
+evento de reaparicion falla a veces porque el jugador todavia no esta cargado del
+todo. Es la clase de fallo intermitente que despues cuesta diagnosticar.
+
+**Recorre los slots en vez de usar `container.contains()`.** La documentacion no
+aclara si `contains` compara tambien la cantidad, y 36 slots una vez por
+reaparicion no cuestan nada. Si ya tiene una brujula no se le da otra: si no, se
+acumularian una por muerte.
+
+**`addItem` devuelve lo que no cupo.** Con el inventario lleno, la brujula se
+suelta a los pies con `spawnItem()` y se avisa por chat, en vez de desaparecer en
+silencio.
+
+Brujula vanilla, sin renombrar: asi cualquier brujula abre el menu y se comporta
+como una normal.

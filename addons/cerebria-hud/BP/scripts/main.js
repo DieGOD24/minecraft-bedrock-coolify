@@ -28,7 +28,7 @@
  */
 
 import {
-  world, system, LocationWaypoint, WaypointTexture, MolangVariableMap
+  world, system, ItemStack, LocationWaypoint, WaypointTexture, MolangVariableMap
 } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 
@@ -591,6 +591,51 @@ function confirmarBorrado(player, indice) {
     }).catch(function () {});
 }
 
+/* ---------- brujula siempre a mano ---------- */
+/*
+ * La brujula es la UNICA via de entrada al sistema de waypoints (ver el
+ * afterEvents.itemUse mas abajo). Al morir sin keepinventory se pierde, y con ella
+ * queda inaccesible todo: marcar, renombrar, viajar. Justo cuando mas hacen falta
+ * los waypoints para volver a la tumba. Por eso se garantiza al reaparecer.
+ */
+function asegurarBrujula(player) {
+  let contenedor;
+  try {
+    const inv = player.getComponent("minecraft:inventory");
+    contenedor = inv && inv.container;
+    if (!contenedor) return;
+  } catch (e) {
+    console.warn(`[cerebria-hud] no pude leer el inventario: ${e}`);
+    return;
+  }
+
+  // Se recorren los slots en vez de usar contenedor.contains(): la doc no aclara
+  // si `contains` compara tambien la cantidad, y 36 slots una vez por reaparicion
+  // no cuestan nada. Si ya tiene una, no se le da otra: si no, se acumularian.
+  try {
+    for (let i = 0; i < contenedor.size; i++) {
+      const it = contenedor.getItem(i);
+      if (it && it.typeId === "minecraft:compass") return;
+    }
+  } catch (e) {
+    return;   // inventario invalido a mitad de la lectura
+  }
+
+  try {
+    const sobra = contenedor.addItem(new ItemStack("minecraft:compass", 1));
+    if (sobra) {
+      // addItem devuelve lo que no cupo. Se suelta a los pies para que no se
+      // pierda en silencio.
+      player.dimension.spawnItem(sobra, player.location);
+      player.sendMessage("§7Inventario lleno: la brujula quedo en el suelo.");
+    } else {
+      player.sendMessage("§7Brujula entregada. Usala para tus waypoints.");
+    }
+  } catch (e) {
+    console.warn(`[cerebria-hud] no pude entregar la brujula: ${e}`);
+  }
+}
+
 /* ---------- eventos ---------- */
 
 world.afterEvents.entityDie.subscribe((ev) => {
@@ -620,6 +665,18 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
   try {
     sincronizarBarra(ev.player);
   } catch (e) { /* ignorado */ }
+
+  // Con retardo a proposito: dar objetos exactamente en el evento de reaparicion
+  // falla a veces porque el jugador todavia no esta cargado del todo, y es la
+  // clase de fallo intermitente que despues cuesta diagnosticar.
+  // Va antes del early return para que aplique tambien al entrar: un jugador
+  // nuevo sin brujula no tiene forma de usar los waypoints.
+  system.runTimeout(function () {
+    try {
+      asegurarBrujula(ev.player);
+    } catch (e) { /* el jugador pudo desconectarse en el intervalo */ }
+  }, 10);
+
   if (ev.initialSpawn) return;
   const t = leerTumba(ev.player);
   if (!t) return;

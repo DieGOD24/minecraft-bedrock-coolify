@@ -75,17 +75,40 @@ OPS: "TuGamertag,OtroGamertag"
 ```
 La imagen resuelve los gamertags a XUID sola y genera `permissions.json`.
 
-### Cerrar el servidor (allowlist)
+### Allowlist
+
+**BDS trae `allow-list=true` por defecto.** Por eso `docker-compose.yml` lleva
+`ALLOW_LIST: "false"` explícito. Si se quita esa línea, el servidor arranca con la
+allowlist activa y vacía y rechaza a todo el mundo con *"no estás invitado a jugar en
+este servidor"* — aunque nunca hayas configurado una allowlist. Dejar `ALLOW_LIST_USERS`
+comentado **no** basta: la imagen solo apaga la allowlist si esa variable existe.
 
 Hoy el servidor está **abierto**: cualquiera con la IP y el puerto entra. Una IP pública
-con Bedrock la encuentran los escáneres en cuestión de horas. Para cerrarlo, descomenta
-en `docker-compose.yml`:
+con Bedrock la encuentran los escáneres en cuestión de horas. Para cerrarlo:
 
 ```yaml
 ALLOW_LIST_USERS: "Gamertag1,Gamertag2"
 ```
 
-Con eso la imagen genera `allowlist.json` y pone `allow-list=true` sola. Commit + deploy.
+Con eso la imagen genera `allowlist.json` y pone `allow-list=true` sola, ignorando el
+`ALLOW_LIST: "false"`. Commit + deploy.
+
+### Verificar la config efectiva sin entrar al servidor
+
+`server.properties` viaja dentro de cada backup, así que se puede auditar desde MinIO
+sin tocar el contenedor — útil porque la API de Coolify no expone los logs del
+contenedor `bedrock`, solo los del sidecar:
+
+```python
+import boto3, botocore, tarfile, io
+s3 = boto3.client("s3", endpoint_url=MINIO_ENDPOINT,
+                  aws_access_key_id=KEY, aws_secret_access_key=SECRET,
+                  config=botocore.config.Config(signature_version="s3v4"))
+o = sorted(s3.list_objects_v2(Bucket="minecraft-backups", Prefix="bedrock/")["Contents"],
+           key=lambda x: x["LastModified"])[-1]
+tf = tarfile.open(fileobj=io.BytesIO(s3.get_object(Bucket="minecraft-backups", Key=o["Key"])["Body"].read()))
+print(tf.extractfile("server.properties").read().decode())
+```
 
 ---
 

@@ -38,8 +38,17 @@ services:
       ENABLE_BDS_V6BIND_FIX: "true"
 
       # --- Control de acceso (hoy: servidor ABIERTO) ---
-      # Descomentar con gamertags separados por coma activa la allowlist sola:
-      # la imagen genera allowlist.json y pone allow-list=true en server.properties.
+      #
+      # OJO, esto NO es opcional ni redundante: BDS trae allow-list=true por
+      # defecto en su propio server.properties. Si no se fuerza a "false" aqui,
+      # el servidor arranca con la allowlist activa y vacia y rechaza a TODOS con
+      # "no estas invitado a jugar en este servidor". Dejar ALLOW_LIST_USERS
+      # comentado no alcanza: la imagen solo apaga la allowlist cuando esa
+      # variable existe, asi que el default de BDS se impone.
+      ALLOW_LIST: "false"
+      #
+      # Para CERRAR el servidor: poner gamertags aqui. Eso genera allowlist.json
+      # y pone allow-list=true solo, ignorando el "false" de arriba.
       # ALLOW_LIST_USERS: "Gamertag1,Gamertag2"
       #
       # Admins. Acepta gamertags (los resuelve a XUID) o XUIDs directos.

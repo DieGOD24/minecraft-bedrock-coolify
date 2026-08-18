@@ -1,0 +1,6 @@
+# Los scripts se ejecutan dentro de contenedores Linux. Si git los entrega con
+# CRLF, el shebang se rompe: "/bin/bash^M: bad interpreter".
+* text=auto eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf

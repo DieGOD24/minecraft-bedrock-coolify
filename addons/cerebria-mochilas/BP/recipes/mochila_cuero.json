@@ -1,0 +1,13 @@
+{
+  "format_version": "1.20.30",
+  "minecraft:recipe_shaped": {
+    "description": { "identifier": "cerebria:mochila_cuero" },
+    "tags": ["crafting_table"],
+    "pattern": ["LLL", "LSL", "LLL"],
+    "key": {
+      "L": { "item": "minecraft:leather" },
+      "S": { "item": "minecraft:string" }
+    },
+    "result": { "item": "cerebria:mochila_cuero" }
+  }
+}

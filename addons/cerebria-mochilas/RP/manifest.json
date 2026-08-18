@@ -1,0 +1,13 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Cerebria Mochilas - recursos",
+    "description": "Texturas y nombres de las mochilas.",
+    "uuid": "0b6e3f91-7d24-45a8-9e10-3c85f7b0a642",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 21, 100]
+  },
+  "modules": [
+    { "type": "resources", "uuid": "d3529c04-86af-4e71-b5d8-1f0972ae6c38", "version": [1, 0, 0] }
+  ]
+}

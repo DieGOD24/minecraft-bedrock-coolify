@@ -1,0 +1,9 @@
+{
+  "resource_pack_name": "cerebria_mochilas",
+  "texture_name": "atlas.items",
+  "texture_data": {
+    "cerebria:mochila_cuero":     { "textures": "textures/items/mochila_cuero" },
+    "cerebria:mochila_hierro":    { "textures": "textures/items/mochila_hierro" },
+    "cerebria:mochila_netherita": { "textures": "textures/items/mochila_netherita" }
+  }
+}

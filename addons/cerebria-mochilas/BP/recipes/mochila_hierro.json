@@ -1,0 +1,14 @@
+{
+  "format_version": "1.20.30",
+  "minecraft:recipe_shaped": {
+    "description": { "identifier": "cerebria:mochila_hierro" },
+    "tags": ["crafting_table"],
+    "pattern": ["ILI", "LML", "ILI"],
+    "key": {
+      "I": { "item": "minecraft:iron_ingot" },
+      "L": { "item": "minecraft:leather" },
+      "M": { "item": "cerebria:mochila_cuero" }
+    },
+    "result": { "item": "cerebria:mochila_hierro" }
+  }
+}

@@ -24,7 +24,13 @@ services:
       SERVER_NAME: "Cerebria Bedrock"
       GAMEMODE: "survival"
       DIFFICULTY: "hard"
-      LEVEL_NAME: "world"
+      # MUNDO NUEVO. No se borra el anterior: al cambiar el NOMBRE, BDS genera uno
+      # limpio y "world" queda intacto en el volumen. Volver atras es devolver este
+      # valor a "world" y redesplegar. Los 45 MB del mundo viejo siguen ahi, ademas
+      # de los respaldos en MinIO.
+      LEVEL_NAME: "cerebria2"
+      # Solo aplica al CREAR el mundo; en uno ya generado se ignora.
+      LEVEL_SEED: "2446409780427489"
       MAX_PLAYERS: "10"
       ALLOW_CHEATS: "true"      # habilita comandos/trucos en el mundo
       ONLINE_MODE: "true"
@@ -122,7 +128,7 @@ services:
       BEDROCK_SSH_HOST: "${BEDROCK_SSH_HOST:-bedrock}"
       # Debe coincidir con LEVEL_NAME de bedrock: install-addons.sh escribe
       # la activacion dentro de /data/worlds/<LEVEL_NAME>/.
-      LEVEL_NAME: "world"
+      LEVEL_NAME: "cerebria2"
       # Entidades cuya existencia prueba que el addon cargo de verdad.
       ADDON_CHECK_ENTITIES: "hatchi:grave"
       # Comandos de prueba: se ejecutan al arrancar y su respuesta queda en los

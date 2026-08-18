@@ -636,6 +636,51 @@ function asegurarBrujula(player) {
   }
 }
 
+/* ---------- kit de inicio ---------- */
+/*
+ * Se entrega UNA sola vez por jugador, marcado con una propiedad dinamica: sin
+ * eso lo recibiria en cada reconexion. Como los datos del jugador viven en el
+ * mundo, en un mundo nuevo todos vuelven a recibirlo, que es lo buscado.
+ */
+const PROP_KIT = "cerebria:kit";
+const KIT = [
+  ["cerebria:mochila_cuero", 1],
+  ["minecraft:stone_pickaxe", 1],
+  ["minecraft:stone_axe", 1],
+  ["minecraft:stone_shovel", 1],
+  ["minecraft:stone_sword", 1],
+  ["minecraft:bread", 16],
+  ["minecraft:torch", 32]
+];
+
+function entregarKit(player) {
+  if (player.getDynamicProperty(PROP_KIT)) return;
+
+  let contenedor;
+  try {
+    const inv = player.getComponent("minecraft:inventory");
+    contenedor = inv && inv.container;
+    if (!contenedor) return;
+  } catch (e) { return; }
+
+  let entregados = 0;
+  for (const par of KIT) {
+    try {
+      // La mochila viene de OTRO pack: si ese pack no cargo, esto lanza. Se
+      // captura por item para que el resto del kit llegue igual.
+      const sobra = contenedor.addItem(new ItemStack(par[0], par[1]));
+      if (sobra) player.dimension.spawnItem(sobra, player.location);
+      entregados++;
+    } catch (e) {
+      console.warn(`[cerebria-hud] no pude dar ${par[0]} del kit: ${e}`);
+    }
+  }
+
+  player.setDynamicProperty(PROP_KIT, true);
+  player.sendMessage(`§aKit de inicio entregado (${entregados} objetos).`);
+  player.sendMessage("§7Usa la mochila para abrirla y la brujula para tus waypoints.");
+}
+
 /* ---------- eventos ---------- */
 
 world.afterEvents.entityDie.subscribe((ev) => {
@@ -674,6 +719,7 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
   system.runTimeout(function () {
     try {
       asegurarBrujula(ev.player);
+      entregarKit(ev.player);
     } catch (e) { /* el jugador pudo desconectarse en el intervalo */ }
   }, 10);
 

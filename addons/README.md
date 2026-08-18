@@ -322,18 +322,31 @@ hay que reconstruir la misma lista de ranuras no vacias, en el mismo orden: eso 
 
 **Sigue siendo hacer clic, no arrastrar y soltar.** El arrastre no existe en la API.
 
-## La fusion de ui/_ui_defs.json
+## ui/_ui_defs.json: NO fusionarlo (error cometido y corregido)
 
-Chest-UI define `ui/_ui_defs.json` y **WAILA tambien**. Bedrock no fusiona los JSON
-de UI: gana el pack de mayor prioridad y el otro pierde sus definiciones. O se rompe
-el panel de WAILA, o no se dibuja el cofre.
+Al añadir Chest-UI se vio que el y WAILA definen ambos `ui/_ui_defs.json`, se
+asumio que se pisaban, y se metio en `install-addons.sh` una funcion que escribia
+la **union** de rutas en cada pack. **Estaba mal en las dos puntas** y rompio la
+vista de cofre: la mochila abria como lista de texto, mostrando crudo el
+`stack#01dur#00` que la UI deberia interpretar como icono y cantidad.
 
-Como ese archivo es solo una lista de rutas, `install-addons.sh` escribe la **union**
-en **cada** pack que lo define. Gane quien gane, todos quedan registrados.
+El Bedrock Wiki lo dice claro:
 
-**Trampa**: Minecraft admite comentarios en sus JSON de UI y **jq no**. El archivo de
-WAILA lleva uno (`/* created by r4isen1920 | MIT License */`), asi que hay que
-quitarlos antes o la fusion falla entera. De eso se encarga `sin_comentarios()`.
+> *"JSON UI files automatically get merged with other packs, so you don't need to
+> reference vanilla files nor other third-party JSON UI files. You should only
+> reference **new UI files you have added in your pack**."*
+
+O sea:
+
+1. **Bedrock ya fusiona los JSON de UI entre packs.** No habia conflicto.
+2. **Cada pack debe listar SOLO archivos propios.** La union metia rutas que no
+   existen dentro del pack, y con rutas colgantes Bedrock descarta las
+   definiciones: el reskin nunca se registraba.
+
+Como los packs se recopian desde `addons/` en cada arranque, bastó con quitar la
+funcion para que los archivos originales volvieran solos.
+
+**Regla**: no tocar `_ui_defs.json` de nadie. Cada pack lista lo suyo.
 
 ## Correccion: los imports relativos SI funcionan
 

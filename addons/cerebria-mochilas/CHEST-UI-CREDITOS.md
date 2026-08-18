@@ -13,9 +13,9 @@ Archivos vendorizados sin modificar salvo donde se indica:
 **`BP/scripts/extensions/constants.js` SE MODIFICA**: se registran las tres
 mochilas en `custom_content` para que se dibujen dentro de la rejilla.
 
-**`RP/ui/_ui_defs.json` SE MODIFICA en tiempo de instalacion**: `install-addons.sh`
-escribe ahi la union de los `ui_defs` de todos los resource packs. Sin eso, WAILA y
-Chest-UI se pisan mutuamente ese archivo y uno de los dos deja de funcionar.
+`RP/ui/_ui_defs.json` va **sin modificar**: lista solo los archivos de Chest-UI.
+Hubo un intento de fusionarlo con el de WAILA que rompio la vista de cofre. Bedrock
+ya fusiona los JSON de UI entre packs, y cada pack debe listar solo lo suyo.
 
 ## Por que hacia falta
 

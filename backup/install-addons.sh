@@ -75,59 +75,19 @@ for pack in "${paquetes[@]}"; do
   [[ $limpiar -eq 1 ]] && rm -rf "$src"
 done
 
-# Minecraft admite comentarios en sus JSON (de UI sobre todo); jq no. Se quitan
-# los de bloque, en linea o multilinea, y los de linea.
-sin_comentarios() {
-  sed -e 's|/\*[^*]*\*/||g' -e '/\/\*/,/\*\//d' -e 's|^[[:space:]]*//.*$||' "$1"
-}
-
-# Fusiona ui/_ui_defs.json entre TODOS los resource packs instalados.
+# NO fusionar ui/_ui_defs.json entre packs.
 #
-# Por que: Bedrock no fusiona los JSON de UI. Si dos packs definen _ui_defs.json
-# (WAILA y Chest-UI lo hacen), gana el de mayor prioridad y el otro pierde sus
-# definiciones: o se rompe el panel de WAILA, o no se dibuja el cofre.
+# Hubo aqui una funcion que escribia la union de rutas en cada resource pack,
+# creyendo que Chest-UI y WAILA se pisaban ese archivo. Estaba MAL en las dos
+# puntas y rompio la vista de cofre:
 #
-# Ese archivo es solo una lista de rutas, asi que se escribe la UNION en CADA pack
-# que lo defina. Gane quien gane, todos quedan registrados. Es idempotente.
-fusionar_ui_defs() {
-  local dir="$DATA/resource_packs"
-  [[ -d "$dir" ]] || return 0
-
-  local archivos
-  mapfile -t archivos < <(find "$dir" -path "*/ui/_ui_defs.json" 2>/dev/null)
-  if [[ ${#archivos[@]} -lt 2 ]]; then
-    log "ui_defs: ${#archivos[@]} pack(s) lo definen, no hace falta fusionar"
-    return 0
-  fi
-
-  # Union de todas las rutas.
-  # OJO: Minecraft acepta comentarios en sus JSON de UI y jq NO. El _ui_defs.json
-  # de WAILA lleva uno, asi que hay que quitarlos antes o la fusion falla entera.
-  local union
-  union=$(for a in "${archivos[@]}"; do sin_comentarios "$a"; done     | jq -s 'map(.ui_defs // []) | add | unique_by(.)' 2>/dev/null)
-  if [[ -z "$union" || "$union" == "null" ]]; then
-    log "WARNING: no pude fusionar los ui_defs; se dejan como estan"
-    return 1
-  fi
-
-  local total
-  total=$(printf '%s' "$union" | jq 'length')
-  local escritos=0
-  for a in "${archivos[@]}"; do
-    local actual
-    actual=$(sin_comentarios "$a" | jq -c '.ui_defs // [] | unique_by(.)' 2>/dev/null)
-    if [[ "$actual" == "$(printf '%s' "$union" | jq -c '.')" ]]; then continue; fi
-    printf '%s' "$union" | jq '{ui_defs: .}' > "$a.tmp" && mv "$a.tmp" "$a"
-    escritos=$((escritos + 1))
-  done
-  if [[ $escritos -gt 0 ]]; then
-    log "ui_defs fusionados: $total rutas escritas en $escritos de ${#archivos[@]} packs"
-  else
-    log "ui_defs ya estaban fusionados ($total rutas en ${#archivos[@]} packs)"
-  fi
-}
-
-fusionar_ui_defs
+#   1. Bedrock YA fusiona los JSON de UI entre packs; no habia conflicto.
+#   2. Cada pack debe listar SOLO archivos propios. La union metia rutas que no
+#      existen dentro del pack, y con rutas colgantes Bedrock descarta las
+#      definiciones: el reskin de cofre nunca se registraba.
+#
+# Los packs se recopian desde /addons en cada arranque, asi que basta con no
+# tocarlos.
 
 # Escribe la activacion solo si cambio, para no reescribir el mundo en cada arranque.
 escribir() {

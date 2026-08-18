@@ -135,9 +135,11 @@ services:
       # logs del sidecar. Se usa un nombre de jugador inexistente a proposito: si
       # la SINTAXIS es valida responde "No targets matched", y si no, error de
       # sintaxis. Asi se valida el comando sin darle nada a nadie.
-      # `scoreboard objectives list` revela si el SCRIPT llego a correr. El `give`
-      # no servia para eso: los items los define el modulo data, asi que existen
-      # aunque el modulo de script muera.
+      # `scoreboard objectives list` revela si el SCRIPT llego a correr: el objetivo
+      # lo crea el script de mochilas. El `give` no servia para eso, porque los
+      # items los define el modulo data y existen aunque el script muera.
+      # OJO: solo es fiable desde que la sonda se difiere con system.run; antes
+      # corria en early-execution mode y daba falsos negativos.
       CONSOLE_CHECKS: |
         scoreboard objectives list
       # Jugadores a los que dar operador por consola apenas se los vea online.

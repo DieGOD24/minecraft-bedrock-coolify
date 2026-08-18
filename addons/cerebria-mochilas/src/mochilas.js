@@ -334,13 +334,19 @@ world.afterEvents.itemUse.subscribe((ev) => {
  * `scoreboard objectives list`. Los console.log van al stdout del contenedor
  * bedrock, que la API de Coolify no expone, asi que no sirven para diagnosticar.
  */
-try {
-  const sb = world.scoreboard;
-  if (!sb.getObjective("mochilas_ok")) {
-    sb.addObjective("mochilas_ok", "mochilas cargadas");
+// Diferida con system.run a proposito: el nivel superior del modulo corre en
+// early-execution mode, donde varias funciones estan restringidas. Esta sonda
+// estaba ahi, fallaba sola, y me hizo concluir que el script no cargaba cuando si
+// lo hacia. Una sonda con falsos negativos es peor que ninguna.
+system.run(function () {
+  try {
+    const sb = world.scoreboard;
+    if (!sb.getObjective("mochilas_ok")) {
+      sb.addObjective("mochilas_ok", "mochilas cargadas");
+    }
+  } catch (e) {
+    console.warn(`[mochilas] no pude crear la sonda: ${e}`);
   }
-} catch (e) {
-  console.warn(`[mochilas] no pude crear la sonda: ${e}`);
-}
+});
 
 console.log("[mochilas] cargado");

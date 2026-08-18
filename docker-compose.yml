@@ -19,7 +19,7 @@ services:
       EULA: "TRUE"
 
       # >>> EL PIN <<<  versión oficial de Mojang (serverBedrockLinux)
-      VERSION: "1.26.44.3"
+      VERSION: "1.26.40.8"
 
       SERVER_NAME: "Cerebria Bedrock"
       GAMEMODE: "survival"

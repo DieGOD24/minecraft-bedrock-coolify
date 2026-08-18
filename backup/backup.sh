@@ -34,7 +34,10 @@ fi
 cd "$DATA_DIR" || { log "ERROR: no existe $DATA_DIR"; exit 1; }
 
 TARGETS=()
-for f in worlds server.properties permissions.json allowlist.json; do
+# behavior_packs y resource_packs van incluidos a proposito: si el mundo activa
+# addons (world_behavior_packs.json) y el backup no los trae, un restore deja el
+# mundo pidiendo packs inexistentes, o sea roto.
+for f in worlds behavior_packs resource_packs server.properties permissions.json allowlist.json; do
   [[ -e "$f" ]] && TARGETS+=("$f")
 done
 

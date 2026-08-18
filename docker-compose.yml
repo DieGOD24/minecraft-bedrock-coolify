@@ -76,7 +76,7 @@ services:
       # Hoy son redundantes porque DEFAULT_PLAYER_PERMISSION_LEVEL=operator ya
       # da permisos a todos; quedan declarados para poder cerrar ese default a
       # "member" sin que estos jugadores pierdan sus comandos.
-      OPS: "sebas GT1858,VeroB1297"
+      OPS: "sebas GT1858,VeroB1297,WillowyWharf91"
     volumes:
       - bedrock-data:/data
     # Mayor que STOP_SERVER_ANNOUNCE_DELAY: si no, el aviso se corta y el mundo

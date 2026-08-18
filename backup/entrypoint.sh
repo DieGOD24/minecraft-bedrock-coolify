@@ -114,7 +114,9 @@ auto_op() {
     [[ -z "$nombre" ]] && continue
     # Solo si BDS lo reporta conectado: necesita al jugador presente para resolver el XUID.
     printf '%s' "$lista_online" | grep -qF "$nombre" || continue
-    salida=$(/usr/local/bin/console-ssh.sh "op $nombre" 2>&1 | grep -v '^###' | tr -d '' | tr -s ' 
+    # El nombre va ENTRECOMILLADO: un gamertag con espacio ("sebas GT1858")
+    # rompe el parser de BDS -> Syntax error: Unexpected "GT1858".
+    salida=$(/usr/local/bin/console-ssh.sh "op \"$nombre\"" 2>&1 | grep -v '^###' | tr -d '' | tr -s ' 
 ' ' ')
     log "op '$nombre' -> ${salida:-sin respuesta}"
   done

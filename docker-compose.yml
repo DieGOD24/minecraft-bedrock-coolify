@@ -42,6 +42,19 @@ services:
       # escuchando solo en IPv6 y los clientes IPv4 no lo encuentran.
       ENABLE_BDS_V6BIND_FIX: "true"
 
+      # Consola remota por SSH en el 2222, NO publicada al host: solo alcanzable
+      # desde dentro del stack. Es la unica via BIDIRECCIONAL a la consola. El
+      # canal por /proc/<pid>/fd/0 que usa el sidecar escribe pero no lee, y la
+      # API de Coolify solo devuelve los logs del contenedor mas nuevo (el
+      # sidecar), nunca los de este. Con esto se corre `list`, `op`, gamerules,
+      # etc. sin redesplegar y sin echar a los jugadores.
+      ENABLE_SSH: "true"
+      RCON_PASSWORD: "${RCON_PASSWORD}"
+
+      # Avisa por chat antes de apagar, en vez de tirar a todos de golpe.
+      STOP_SERVER_ANNOUNCE_DELAY: "30"
+      STOP_SERVER_ANNOUNCE: "say El servidor se reinicia en %delay% segundos"
+
       # --- Control de acceso (hoy: servidor ABIERTO) ---
       #
       # OJO, esto NO es opcional ni redundante: BDS trae allow-list=true por
@@ -60,6 +73,9 @@ services:
       # OPS: "TuGamertag"
     volumes:
       - bedrock-data:/data
+    # Mayor que STOP_SERVER_ANNOUNCE_DELAY: si no, el aviso se corta y el mundo
+    # se guarda a medias.
+    stop_grace_period: 60s
     deploy:
       resources:
         limits:
@@ -90,6 +106,8 @@ services:
       BACKUP_INTERVAL_SECONDS: "${BACKUP_INTERVAL_SECONDS:-86400}"
       BACKUP_INITIAL_DELAY_SECONDS: "${BACKUP_INITIAL_DELAY_SECONDS:-300}"
       TZ: "America/Bogota"
+      RCON_PASSWORD: "${RCON_PASSWORD}"
+      BEDROCK_SSH_HOST: "${BEDROCK_SSH_HOST:-bedrock}"
       # Comandos que se mandan a la consola de BDS en cada arranque, uno por linea.
       # Es la unica via para fijar gamerules desde el repo: no son server.properties,
       # viven en level.dat y solo se cambian por consola. El sidecar puede hacerlo

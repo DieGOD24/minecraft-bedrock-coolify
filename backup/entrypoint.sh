@@ -47,6 +47,25 @@ else
   sleep "$BACKUP_INITIAL_DELAY_SECONDS"
 fi
 
+# --- Sonda de la consola SSH ----------------------------------------------
+# Publica en los logs DEL SIDECAR la respuesta de `list`. Es la unica forma de
+# ver los gamertags conectados: BDS los escribe en el stdout de su contenedor y
+# la API de Coolify no expone ese contenedor (ver console-ssh.sh).
+if [[ -n "${RCON_PASSWORD:-}" ]]; then
+  log "Consultando la consola por SSH (list)..."
+  if salida=$(/usr/local/bin/console-ssh.sh "list" 2>&1); then
+    log "respuesta de la consola:"
+    printf '%s
+' "$salida" | sed 's/^/    /'
+  else
+    log "WARNING: la consola SSH no respondio. Detalle:"
+    printf '%s
+' "$salida" | sed 's/^/    /'
+  fi
+else
+  log "RCON_PASSWORD no definido: se omite la consola SSH."
+fi
+
 # --- Bucle de respaldo ----------------------------------------------------
 while true; do
   if /usr/local/bin/backup.sh; then

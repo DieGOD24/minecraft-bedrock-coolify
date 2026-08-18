@@ -23,7 +23,7 @@ services:
 
       SERVER_NAME: "Cerebria Bedrock"
       GAMEMODE: "survival"
-      DIFFICULTY: "normal"
+      DIFFICULTY: "hard"
       LEVEL_NAME: "world"
       MAX_PLAYERS: "10"
       ALLOW_CHEATS: "true"      # habilita comandos/trucos en el mundo

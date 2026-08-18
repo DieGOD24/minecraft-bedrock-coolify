@@ -355,3 +355,53 @@ dejo de cargar. **Esa conclusion era erronea**: Chest-UI los usa como forma norm
 de uso y esta mantenido. La caida de entonces tuvo otra causa.
 
 El HUD sigue en un solo archivo por prudencia, pero no por esa razon.
+
+## La cache del cliente: subir la version o el pack no llega (el error mas caro)
+
+**Regla: si cambia cualquier archivo de un resource pack, hay que subir su version.**
+
+El cliente de Bedrock cachea los resource packs de servidor por **UUID + version**.
+Si el contenido cambia y la version no, el cliente se queda con la copia vieja para
+siempre. El servidor no tiene forma de avisarle.
+
+Asi se perdio la vista de cofre durante varios despliegues:
+
+| Commit | Que paso | Version del RP |
+|---|---|---|
+| `a748f82` | RP de mochilas creado: texturas, **sin** Chest-UI | `1.0.0` |
+| `617d6e8` | Se anadio Chest-UI (`ui/server_form.json`, …) | `1.0.0`, sin tocar |
+
+Los clientes seguian con el `1.0.0` sin carpeta `ui/`, asi que la mochila salia como
+lista de texto con `stack#01dur#00` crudo.
+
+**El sintoma es mudo y enganoso**: en el servidor todo se ve perfecto. Se verifico
+contra el respaldo que los 12 archivos de Chest-UI estaban desplegados y eran byte a
+byte identicos al upstream, que `_ui_defs.json` no tenia rutas colgantes y que el pack
+estaba activo en `world_resource_packs.json`. Todo correcto — y aun asi no funcionaba,
+porque el problema estaba al otro lado del cable.
+
+Detalles que confundieron el diagnostico, y que conviene tener presentes:
+
+- **La textura del item si se veia**, porque estaba en el `1.0.0` original. Que una
+  parte del pack funcione no prueba que el cliente tenga la version actual.
+- **El script si corria**, porque el behavior pack se ejecuta en el servidor y no se
+  descarga. Un BP al dia no dice nada sobre el RP del cliente.
+
+### Como esta resuelto
+
+`install-addons.sh` lo hace solo, en `version_por_contenido()`: calcula un hash del
+contenido del pack (excluyendo `manifest.json`), lo compara con la marca de
+`/data/.pack-versions/<uuid>` y, si cambio, sube el numero de parche. El contador vive
+en el volumen, asi que **solo sube**: nunca baja ni se repite aunque el contenido
+vuelva a un estado anterior.
+
+Dos cosas que hay que respetar si se toca esa funcion:
+
+- **Devuelve la version por stdout**, asi que todos sus `log` van a stderr. Sin eso, la
+  linea de log acaba dentro del valor y se escribe basura en `world_resource_packs.json`.
+- **El temporal del manifest se crea fuera del pack.** Con `> "$dest/manifest.json.tmp"`
+  el redirect crea el archivo aunque `jq` falle, y entonces se queda dentro del pack, se
+  sirve al cliente y entra en el hash, que pasa a cambiar en cada arranque.
+
+Solo se aplica a los packs **propios** y de tipo `resources`. Los de terceros declaran
+`dependencies` con version exacta: reescribirsela romperia esa resolucion.

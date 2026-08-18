@@ -10,8 +10,7 @@ RUN apk add --no-cache bash tar gzip curl ca-certificates tzdata coreutils findu
  && chmod +x /usr/local/bin/mc \
  && mc --version
 
-COPY backup.sh /usr/local/bin/backup.sh
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY lib-console.sh backup.sh entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/backup.sh /usr/local/bin/entrypoint.sh
 
 # mc escribe su config aquí; sin HOME definido en algunos runtimes se va a /

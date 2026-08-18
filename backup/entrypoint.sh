@@ -1,18 +1,53 @@
 #!/bin/bash
-# Bucle de respaldo. Se usa un loop en vez de cron a propósito: así todo el
-# output cae directo en el stdout del contenedor y se ve en los logs de Coolify,
-# sin depender de la semántica de mail/log de busybox crond.
+# Sidecar: aplica los comandos de arranque y luego respalda en bucle.
+# Se usa un loop en vez de cron a proposito: asi todo el output cae directo en el
+# stdout del contenedor y se ve en los logs de Coolify.
 set -uo pipefail
+source /usr/local/bin/lib-console.sh
 
 : "${BACKUP_INTERVAL_SECONDS:=86400}"
 : "${BACKUP_INITIAL_DELAY_SECONDS:=300}"
+: "${STARTUP_COMMANDS:=}"
+: "${STARTUP_COMMANDS_DELAY_SECONDS:=90}"
 
 log() { echo "[backup] $(date '+%Y-%m-%d %H:%M:%S %Z') $*"; }
 
-log "Iniciado. Intervalo: ${BACKUP_INTERVAL_SECONDS}s. Primer backup en ${BACKUP_INITIAL_DELAY_SECONDS}s."
-log "Para disparar uno a mano: docker exec <contenedor-backup> /usr/local/bin/backup.sh"
-sleep "$BACKUP_INITIAL_DELAY_SECONDS"
+log "Iniciado. Intervalo de backup: ${BACKUP_INTERVAL_SECONDS}s."
+log "Para disparar un backup a mano: docker exec <contenedor-backup> /usr/local/bin/backup.sh"
 
+# --- Comandos de arranque -------------------------------------------------
+# Los gamerules viven en level.dat, asi que basta con aplicarlos una vez; pero
+# reenviarlos en cada arranque es idempotente y mantiene el mundo alineado con
+# lo que dice el repo, que es el punto de tener esto versionado.
+if [[ -n "${STARTUP_COMMANDS//[[:space:]]/}" ]]; then
+  log "Esperando ${STARTUP_COMMANDS_DELAY_SECONDS}s antes de los comandos de arranque..."
+  sleep "$STARTUP_COMMANDS_DELAY_SECONDS"
+
+  if wait_for_bds; then
+    while IFS= read -r cmd; do
+      cmd="$(printf '%s' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+      [[ -z "$cmd" || "$cmd" == \#* ]] && continue
+      if send_console "$cmd"; then
+        log "consola <- $cmd"
+      else
+        log "WARNING: no pude enviar a la consola: $cmd"
+      fi
+      sleep 1
+    done <<< "$STARTUP_COMMANDS"
+    log "Comandos de arranque aplicados."
+  else
+    log "WARNING: BDS no apareció; se omiten los comandos de arranque."
+    log "WARNING: revisar 'pid: service:bedrock' en docker-compose.yml."
+  fi
+
+  restante=$(( BACKUP_INITIAL_DELAY_SECONDS - STARTUP_COMMANDS_DELAY_SECONDS ))
+  [[ $restante -gt 0 ]] && { log "Primer backup en ${restante}s."; sleep "$restante"; }
+else
+  log "Sin comandos de arranque. Primer backup en ${BACKUP_INITIAL_DELAY_SECONDS}s."
+  sleep "$BACKUP_INITIAL_DELAY_SECONDS"
+fi
+
+# --- Bucle de respaldo ----------------------------------------------------
 while true; do
   if /usr/local/bin/backup.sh; then
     log "Ciclo OK. Próximo backup en ${BACKUP_INTERVAL_SECONDS}s."

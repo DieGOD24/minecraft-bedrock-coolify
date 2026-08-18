@@ -26,7 +26,7 @@ services:
       DIFFICULTY: "normal"
       LEVEL_NAME: "world"
       MAX_PLAYERS: "10"
-      ALLOW_CHEATS: "false"
+      ALLOW_CHEATS: "true"      # habilita comandos/trucos en el mundo
       ONLINE_MODE: "true"
       SERVER_PORT: "19132"
       VIEW_DISTANCE: "16"
@@ -85,6 +85,12 @@ services:
       BACKUP_INTERVAL_SECONDS: "${BACKUP_INTERVAL_SECONDS:-86400}"
       BACKUP_INITIAL_DELAY_SECONDS: "${BACKUP_INITIAL_DELAY_SECONDS:-300}"
       TZ: "America/Bogota"
+      # Comandos que se mandan a la consola de BDS en cada arranque, uno por linea.
+      # Es la unica via para fijar gamerules desde el repo: no son server.properties,
+      # viven en level.dat y solo se cambian por consola. El sidecar puede hacerlo
+      # porque comparte el PID namespace del server (ver `pid:` arriba).
+      STARTUP_COMMANDS: |
+        gamerule showcoordinates true
     # Sin esto el estado agregado de la app en Coolify queda en "unknown" y deja
     # de servir para monitoreo: un sidecar caído se vería igual que uno sano.
     healthcheck:

@@ -1,10 +1,11 @@
 #!/bin/bash
 # Snapshot consistente del mundo de Bedrock y subida a MinIO.
 #
-# Secuencia: save hold -> esperar flush -> tar -> save resume -> mc cp -> retención.
-# "save hold" hace que BDS deje de escribir en el LevelDB del mundo, que es lo
-# que evita que el tar capture un estado a medias.
+# Secuencia: save hold -> esperar flush -> tar -> save resume -> mc cp -> retencion.
+# "save hold" hace que BDS deje de escribir en el LevelDB del mundo, que es lo que
+# evita que el tar capture un estado a medias.
 set -uo pipefail
+source /usr/local/bin/lib-console.sh
 
 log() { echo "[backup] $(date '+%Y-%m-%d %H:%M:%S %Z') $*"; }
 
@@ -19,24 +20,10 @@ DATA_DIR=/data
 TS=$(date -u '+%Y%m%dT%H%M%SZ')
 ARCHIVE="/tmp/bedrock-${TS}.tar.gz"
 
-# Localiza el directorio /proc del proceso bedrock_server dentro del PID
-# namespace compartido. Misma lógica que bin/send-command de la imagen de itzg.
-find_bds_proc() {
-  find /proc -mindepth 2 -maxdepth 2 -name exe \
-    \( -lname '/data/bedrock_server-*' -o -lname /usr/local/bin/box64 \) \
-    -printf '%h' -quit 2>/dev/null
-}
-
-send_command() {
-  echo "$2" > "$1/fd/0" 2>/dev/null
-}
-
-PROC=$(find_bds_proc)
 QUIESCED=0
-
-if [[ -n "$PROC" ]] && send_command "$PROC" "save hold"; then
+if send_console "save hold"; then
   QUIESCED=1
-  log "save hold enviado a BDS ($PROC). Esperando ${SAVE_HOLD_WAIT}s al flush..."
+  log "save hold enviado a BDS. Esperando ${SAVE_HOLD_WAIT}s al flush..."
   sleep "$SAVE_HOLD_WAIT"
 else
   log "WARNING: no se alcanzó la consola de BDS."
@@ -53,7 +40,7 @@ done
 
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
   log "ERROR: no hay nada que respaldar en $DATA_DIR (¿el server todavía no arrancó?)"
-  [[ $QUIESCED -eq 1 ]] && send_command "$PROC" "save resume"
+  [[ $QUIESCED -eq 1 ]] && send_console "save resume"
   exit 1
 fi
 
@@ -63,7 +50,7 @@ TAR_RC=$?
 
 # Reanudar la escritura del server cuanto antes, pase lo que pase con el tar.
 if [[ $QUIESCED -eq 1 ]]; then
-  send_command "$PROC" "save resume" && log "save resume enviado."
+  send_console "save resume" && log "save resume enviado."
 fi
 
 if [[ $TAR_RC -ne 0 ]]; then

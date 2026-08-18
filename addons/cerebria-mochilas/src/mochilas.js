@@ -35,6 +35,10 @@ import { world, system, ItemStack } from "@minecraft/server";
 
 const PROP = "cerebria:contenido";
 
+/* Si cambias un tamano de `huecos`, hay que ACTIVAR ese layout en
+ * RP/ui/_global_variables.json ($disable_N_slots_layout: false). Chest-UI viene
+ * con casi todos apagados, y abrir un cofre de un tamano apagado no da ningun
+ * error: sale una pantalla transparente y sin boton de cerrar. */
 const MOCHILAS = {
   "cerebria:mochila_cuero":     { nombre: "Mochila de cuero",     huecos: 9,  conservar: false },
   "cerebria:mochila_hierro":    { nombre: "Mochila de hierro",    huecos: 18, conservar: false },

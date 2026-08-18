@@ -405,3 +405,38 @@ Dos cosas que hay que respetar si se toca esa funcion:
 
 Solo se aplica a los packs **propios** y de tipo `resources`. Los de terceros declaran
 `dependencies` con version exacta: reescribirsela romperia esa resolucion.
+
+## Pantalla transparente al abrir la mochila: layouts desactivados
+
+Chest-UI se distribuye con **casi todos los layouts apagados** en
+`RP/ui/_global_variables.json`, y solo el de 54 huecos activo. Su propio comentario lo
+explica: hay que encender unicamente los tamanos que se usen, para no cargar de mas.
+
+Las mochilas son de **9, 18 y 27** huecos, los tres apagados de fabrica. El resultado:
+
+- el script emite bien el titulo `§c§h§e§s§t§0§9§r`
+- `server_form.json` lo reconoce y muestra el panel de cofre
+- el panel busca el layout de 9 huecos, que no existe, y **no dibuja nada**
+
+Sale una pantalla transparente **sin boton de cerrar**, asi que el jugador se queda
+atrapado. Y no aparece un solo error en ninguna parte: el fallo es mudo.
+
+**Regla: si se cambia el numero de `huecos` de una mochila, hay que activar ese layout**
+(`"$disable_N_slots_layout": false`). Hay un aviso en los dos sitios donde alguien
+tocaria esto: junto a la tabla `MOCHILAS` de `src/mochilas.js` y en el propio
+`_global_variables.json`.
+
+Configuracion actual: activos 9, 18 y 27; apagados 1, 5, 36, 45, 54 y el horno, que no
+usamos.
+
+### Como se llego hasta aqui
+
+Vale la pena leerlo junto con la seccion de la cache, porque fueron dos fallos
+encadenados que daban sintomas distintos y se arreglaron por separado:
+
+1. Con la version del pack congelada, el cliente no tenia siquiera los archivos de UI:
+   la mochila salia como **lista de texto**.
+2. Al subir la version y llegar los archivos, Chest-UI ya se registraba pero no
+   encontraba el layout: **pantalla transparente**.
+
+El paso de "lista" a "transparente" era una senal de progreso, no una regresion.

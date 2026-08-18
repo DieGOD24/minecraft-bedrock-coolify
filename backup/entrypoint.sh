@@ -58,6 +58,29 @@ else
   sleep "$BACKUP_INITIAL_DELAY_SECONDS"
 fi
 
+# --- Comprobaciones por consola ---------------------------------------------
+# Ejecuta comandos sueltos y VUELCA SU RESPUESTA en estos logs. Sirve para probar
+# sintaxis contra el BDS real sin tener que entrar al juego: los console.log de un
+# script y los errores de comando salen por el stdout del contenedor bedrock, que
+# la API de Coolify no expone.
+: "${CONSOLE_CHECKS:=}"
+
+comprobar_consola() {
+  [[ -z "${CONSOLE_CHECKS//[[:space:]]/}" ]] && return 0
+  local cmd salida
+  while IFS= read -r cmd; do
+    cmd="$(printf '%s' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -z "$cmd" || "$cmd" == \#* ]] && continue
+    salida=$(/usr/local/bin/console-ssh.sh "$cmd" 2>&1 | grep -v '^###' | tr -d '' | tr -s ' 
+' ' ')
+    log "consola? [$cmd] -> ${salida:-sin respuesta}"
+  done <<< "$CONSOLE_CHECKS"
+}
+
+if [[ -n "${RCON_PASSWORD:-}" ]]; then
+  comprobar_consola
+fi
+
 # --- Verificacion de addons -----------------------------------------------
 # Comprueba que BDS realmente CARGO el addon, no solo que los archivos estan.
 # `testfor` con un tipo de entidad no crea ni destruye nada: si el addon cargo,

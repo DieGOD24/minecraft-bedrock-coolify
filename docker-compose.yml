@@ -125,6 +125,13 @@ services:
       LEVEL_NAME: "world"
       # Entidades cuya existencia prueba que el addon cargo de verdad.
       ADDON_CHECK_ENTITIES: "hatchi:grave"
+      # Comandos de prueba: se ejecutan al arrancar y su respuesta queda en los
+      # logs del sidecar. Se usa un nombre de jugador inexistente a proposito: si
+      # la SINTAXIS es valida responde "No targets matched", y si no, error de
+      # sintaxis. Asi se valida el comando sin darle nada a nadie.
+      CONSOLE_CHECKS: |
+        give "__syntaxcheck__" empty_map 1 2
+        give "__syntaxcheck__" empty_map 1 0
       # Jugadores a los que dar operador por consola apenas se los vea online.
       # BDS resuelve el XUID el mismo, sin depender de ninguna API externa.
       AUTO_OP_PLAYERS: "sebas GT1858,VeroB1297,WillowyWharf91"

@@ -3,11 +3,17 @@
   "minecraft:item": {
     "description": {
       "identifier": "cerebria:mochila_cuero",
-      "menu_category": { "category": "equipment" }
+      "menu_category": {
+        "category": "equipment"
+      }
     },
     "components": {
       "minecraft:max_stack_size": 1,
-      "minecraft:icon": { "texture": "cerebria:mochila_cuero" },
+      "minecraft:icon": {
+        "textures": {
+          "default": "cerebria:mochila_cuero"
+        }
+      },
       "minecraft:hand_equipped": false
     }
   }

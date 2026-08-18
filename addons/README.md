@@ -293,3 +293,52 @@ silencio.
 
 Brujula vanilla, sin renombrar: asi cualquier brujula abre el menu y se comporta
 como una normal.
+
+## Bug: los items de mochila salian invisibles
+
+Se escribio `"minecraft:icon": { "texture": "..." }`. La referencia oficial del
+componente dice de ese campo: **"Deprecated - no longer in use"**. Con
+`format_version 1.21.30` el icono no resuelve a nada y el item se dibuja vacio,
+tambien en la mano. La forma vigente, la que usan los items vanilla:
+
+```json
+"minecraft:icon": { "textures": { "default": "cerebria:mochila_cuero" } }
+```
+
+## Interfaz de cofre: se dijo que no se podia, y si
+
+Antes se afirmo que era imposible porque no existe `player.openContainer()` en la
+API estable. Eso sigue siendo cierto, pero hay otra via: **reskinear el formulario**.
+
+[Chest-UI](https://github.com/Herobrine643928/Chest-UI) (CC-BY-4.0) sustituye la UI
+del ActionForm para que se vea y funcione como un cofre, codificando el tamaño de
+la rejilla en el titulo con una cadena magica. Soporta 9, 18, 27, 36, 45 y 54
+huecos; los tres niveles encajan exacto.
+
+Su `show()` agrega el inventario del jugador como botones DESPUES de los huecos del
+cofre, asi que un clic ahi mete el objeto. Para traducir el boton a una ranura real
+hay que reconstruir la misma lista de ranuras no vacias, en el mismo orden: eso hace
+`ranurasConItems()`.
+
+**Sigue siendo hacer clic, no arrastrar y soltar.** El arrastre no existe en la API.
+
+## La fusion de ui/_ui_defs.json
+
+Chest-UI define `ui/_ui_defs.json` y **WAILA tambien**. Bedrock no fusiona los JSON
+de UI: gana el pack de mayor prioridad y el otro pierde sus definiciones. O se rompe
+el panel de WAILA, o no se dibuja el cofre.
+
+Como ese archivo es solo una lista de rutas, `install-addons.sh` escribe la **union**
+en **cada** pack que lo define. Gane quien gane, todos quedan registrados.
+
+**Trampa**: Minecraft admite comentarios en sus JSON de UI y **jq no**. El archivo de
+WAILA lleva uno (`/* created by r4isen1920 | MIT License */`), asi que hay que
+quitarlos antes o la fusion falla entera. De eso se encarga `sin_comentarios()`.
+
+## Correccion: los imports relativos SI funcionan
+
+Se concluyo que Bedrock no los soportaba, porque al dividir el HUD en dos el pack
+dejo de cargar. **Esa conclusion era erronea**: Chest-UI los usa como forma normal
+de uso y esta mantenido. La caida de entonces tuvo otra causa.
+
+El HUD sigue en un solo archivo por prudencia, pero no por esa razon.

@@ -8,12 +8,23 @@
  *
  * PACK APARTE DEL HUD a proposito: si este script falla al cargar, el reloj y los
  * waypoints siguen vivos. En Bedrock un modulo que falla tumba el pack ENTERO.
- * Y TODO EN UN SOLO ARCHIVO: dividirlo con un import relativo ya tumbo un pack.
  *
- * POR QUE ES UNA LISTA Y NO UN COFRE
- * Bedrock no permite abrir una interfaz de contenedor desde script: no existe un
- * player.openContainer() en la API estable. Asi que la mochila se maneja con
- * formularios: tocas un objeto y pasa de un lado al otro.
+ * SOBRE LOS IMPORTS RELATIVOS: aqui se usan (./extensions/forms.js). Antes se
+ * concluyo que Bedrock no los soportaba, porque al dividir el HUD en dos el pack
+ * dejo de cargar; esa conclusion era ERRONEA. Chest-UI los usa como forma normal
+ * de uso, esta mantenido y tiene cientos de usuarios, asi que la caida de entonces
+ * tuvo otra causa. Aun asi el riesgo queda contenido: este pack es independiente.
+ *
+ * INTERFAZ DE COFRE
+ * Bedrock no permite abrir un contenedor real desde script (no existe
+ * player.openContainer()), pero Chest-UI reskinea el ActionForm para que se vea y
+ * funcione como un cofre: rejilla, iconos reales, cantidades y brillo de encantado.
+ * El tamano se codifica en el titulo del formulario con una cadena magica.
+ * Sigue siendo hacer CLIC, no arrastrar y soltar: eso no existe en la API.
+ *
+ * show() de Chest-UI agrega el inventario del jugador como botones DESPUES de los
+ * huecos del cofre, asi que un clic ahi mete el objeto. Para saber que ranura se
+ * toco hay que reconstruir la misma lista de ranuras no vacias, en el mismo orden.
  *
  * POR QUE max_stack_size ES 1
  * ItemStack.setDynamicProperty solo funciona en items NO apilables. Es la
@@ -21,7 +32,7 @@
  */
 
 import { world, system, ItemStack } from "@minecraft/server";
-import { ActionFormData } from "@minecraft/server-ui";
+import { ChestFormData } from "./extensions/forms.js";
 
 const PROP = "cerebria:contenido";
 
@@ -146,14 +157,36 @@ function guardarEnRanura(player, ranura, stack) {
   if (c) c.setItem(ranura, stack);
 }
 
-/* ---------- formularios ---------- */
+/* ---------- interfaz de cofre ---------- */
 
-function etiqueta(o) {
-  const nombre = o.n || o.t.replace("minecraft:", "").replace(/_/g, " ");
-  const extras = [];
-  if (o.d) extras.push("usado");
-  if (o.e) extras.push(`${o.e.length} ench.`);
-  return `${nombre} x${o.a || 1}` + (extras.length ? `\n§7${extras.join(" · ")}` : "");
+// Misma lista que recorre show() de Chest-UI: ranuras NO vacias, en orden. Es lo
+// que permite traducir el boton pulsado a una ranura real del inventario.
+function ranurasConItems(contenedor) {
+  const salida = [];
+  for (let i = 0; i < contenedor.size; i++) {
+    if (contenedor.getItem(i)) salida.push(i);
+  }
+  return salida;
+}
+
+// Chest-UI espera la durabilidad como porcentaje RESTANTE de 0 a 99.
+function durabilidadRestante(stack) {
+  try {
+    const d = stack.getComponent("minecraft:durability");
+    if (!d || !d.maxDurability) return 0;
+    return Math.round((d.maxDurability - d.damage) / d.maxDurability * 99);
+  } catch (e) {
+    return 0;
+  }
+}
+
+function tieneEncantamientos(stack) {
+  try {
+    const e = stack.getComponent("minecraft:enchantable");
+    return !!(e && e.getEnchantments().length > 0);
+  } catch (e) {
+    return false;
+  }
 }
 
 function abrirMochila(player, ranura) {
@@ -164,24 +197,41 @@ function abrirMochila(player, ranura) {
 
   const def = MOCHILAS[stack.typeId];
   const lista = leerContenido(stack);
+  const form = new ChestFormData(String(def.huecos)).title(def.nombre);
 
-  const f = new ActionFormData()
-    .title(def.nombre)
-    .body(`§7${lista.length} de ${def.huecos} huecos usados.\n` +
-          `§7Toca un objeto para sacarlo.`);
-  for (const o of lista) f.button(etiqueta(o));
-  f.button("Guardar objetos");
-  f.button("Guardar todo lo que quepa");
-  f.button("Sacar todo");
-  f.button("Cerrar");
+  for (let i = 0; i < lista.length && i < def.huecos; i++) {
+    const o = lista[i];
+    let vista;
+    try {
+      vista = deserializar(o);
+    } catch (e) {
+      continue;   // entrada corrupta: se salta en vez de romper la apertura
+    }
+    const nombre = o.n || o.t.replace("minecraft:", "").replace(/_/g, " ");
+    form.button(i, nombre, o.l || [], o.t, o.a || 1,
+                durabilidadRestante(vista), tieneEncantamientos(vista));
+  }
 
-  f.show(player).then(function (res) {
+  // Las ranuras del inventario que Chest-UI dibuja debajo, en su mismo orden.
+  const ranurasInv = ranurasConItems(c);
+
+  form.show(player).then(function (res) {
     if (res.canceled) return;
-    const n = lista.length;
-    if (res.selection < n) sacarUno(player, ranura, res.selection);
-    else if (res.selection === n) listarInventario(player, ranura);
-    else if (res.selection === n + 1) guardarTodo(player, ranura);
-    else if (res.selection === n + 2) sacarTodo(player, ranura);
+    const sel = res.selection;
+    if (sel < def.huecos) {
+      if (sel < lista.length) sacarUno(player, ranura, sel);
+      else abrirMochila(player, ranura);   // hueco vacio: se reabre
+      return;
+    }
+    const idx = sel - def.huecos;
+    const origen = ranurasInv[idx];
+    if (origen === undefined) { abrirMochila(player, ranura); return; }
+    if (origen === ranura) {
+      player.sendMessage("§7Esa es la mochila que tenes abierta.");
+      abrirMochila(player, ranura);
+      return;
+    }
+    meterUno(player, ranura, origen);
   }).catch(function () {});
 }
 
@@ -197,11 +247,13 @@ function sacarUno(player, ranura, indice) {
 
   if (c.emptySlotsCount === 0) {
     player.sendMessage("§cNo tenes espacio libre en el inventario.");
+    abrirMochila(player, ranura);
     return;
   }
   const sobra = c.addItem(deserializar(o));
   if (sobra) {
     player.sendMessage("§cNo entro; queda en la mochila.");
+    abrirMochila(player, ranura);
     return;
   }
   lista.splice(indice, 1);
@@ -209,124 +261,36 @@ function sacarUno(player, ranura, indice) {
   abrirMochila(player, ranura);
 }
 
-function sacarTodo(player, ranura) {
-  const c = contenedorDe(player);
-  if (!c) return;
-  const stack = c.getItem(ranura);
-  if (!stack || !MOCHILAS[stack.typeId]) return;
-
-  const lista = leerContenido(stack);
-  const quedan = [];
-  let sacados = 0;
-  for (const o of lista) {
-    if (c.emptySlotsCount === 0) { quedan.push(o); continue; }
-    const sobra = c.addItem(deserializar(o));
-    if (sobra) quedan.push(o); else sacados++;
-  }
-  guardarEnRanura(player, ranura, escribirContenido(stack, quedan));
-  player.sendMessage(`§aSacaste ${sacados} objeto(s).` +
-    (quedan.length ? ` §7Quedan ${quedan.length} por falta de espacio.` : ""));
-}
-
-// Lista el inventario para elegir que meter. Se salta la ranura de la propia
-// mochila para que no intente guardarse a si misma.
-function listarInventario(player, ranura) {
-  const c = contenedorDe(player);
-  if (!c) return;
-  const stack = c.getItem(ranura);
-  if (!stack || !MOCHILAS[stack.typeId]) return;
-  const def = MOCHILAS[stack.typeId];
-  const lista = leerContenido(stack);
-
-  if (lista.length >= def.huecos) {
-    player.sendMessage("§cLa mochila esta llena.");
-    return;
-  }
-
-  const candidatos = [];
-  for (let i = 0; i < c.size; i++) {
-    if (i === ranura) continue;
-    const it = c.getItem(i);
-    if (!it) continue;
-    candidatos.push({ i: i, it: it, motivo: motivoBloqueo(it) });
-  }
-  if (candidatos.length === 0) {
-    player.sendMessage("§7No tenes nada mas en el inventario.");
-    return;
-  }
-
-  const f = new ActionFormData()
-    .title("Guardar objetos")
-    .body(`§7Quedan ${def.huecos - lista.length} huecos. Toca lo que quieras guardar.`);
-  for (const cand of candidatos) {
-    const nom = cand.it.nameTag || cand.it.typeId.replace("minecraft:", "").replace(/_/g, " ");
-    f.button(cand.motivo ? `${nom} x${cand.it.amount}\n§cno entra` : `${nom} x${cand.it.amount}`);
-  }
-  f.button("Volver");
-
-  f.show(player).then(function (res) {
-    if (res.canceled) return;
-    if (res.selection >= candidatos.length) { abrirMochila(player, ranura); return; }
-    const elegido = candidatos[res.selection];
-    if (elegido.motivo) {
-      player.sendMessage(`§cNo entra: ${elegido.motivo}.`);
-      listarInventario(player, ranura);
-      return;
-    }
-    meterUno(player, ranura, elegido.i);
-  }).catch(function () {});
-}
-
 function meterUno(player, ranura, ranuraOrigen) {
   const c = contenedorDe(player);
   if (!c) return;
   const stack = c.getItem(ranura);
   const origen = c.getItem(ranuraOrigen);
-  if (!stack || !MOCHILAS[stack.typeId] || !origen) return;
+  if (!stack || !MOCHILAS[stack.typeId] || !origen) { abrirMochila(player, ranura); return; }
 
   const def = MOCHILAS[stack.typeId];
   const lista = leerContenido(stack);
   if (lista.length >= def.huecos) {
     player.sendMessage("§cLa mochila esta llena.");
+    abrirMochila(player, ranura);
     return;
   }
   const motivo = motivoBloqueo(origen);
-  if (motivo) { player.sendMessage(`§cNo entra: ${motivo}.`); return; }
-  if (!conservaEncantamientos() && origen.getComponent("minecraft:enchantable") &&
-      origen.getComponent("minecraft:enchantable").getEnchantments().length > 0) {
+  if (motivo) {
+    player.sendMessage(`§cNo entra: ${motivo}.`);
+    abrirMochila(player, ranura);
+    return;
+  }
+  if (!conservaEncantamientos() && tieneEncantamientos(origen)) {
     player.sendMessage("§cNo entra: los encantamientos se perderian.");
+    abrirMochila(player, ranura);
     return;
   }
 
   lista.push(serializar(origen));
   c.setItem(ranuraOrigen, undefined);
   guardarEnRanura(player, ranura, escribirContenido(stack, lista));
-  listarInventario(player, ranura);
-}
-
-function guardarTodo(player, ranura) {
-  const c = contenedorDe(player);
-  if (!c) return;
-  const stack = c.getItem(ranura);
-  if (!stack || !MOCHILAS[stack.typeId]) return;
-
-  const def = MOCHILAS[stack.typeId];
-  const lista = leerContenido(stack);
-  let metidos = 0, rechazados = 0;
-
-  for (let i = 0; i < c.size && lista.length < def.huecos; i++) {
-    if (i === ranura) continue;
-    const it = c.getItem(i);
-    if (!it) continue;
-    if (motivoBloqueo(it)) { rechazados++; continue; }
-    lista.push(serializar(it));
-    c.setItem(i, undefined);
-    metidos++;
-  }
-  guardarEnRanura(player, ranura, escribirContenido(stack, lista));
-  player.sendMessage(`§aGuardaste ${metidos} objeto(s).` +
-    (rechazados ? ` §7${rechazados} no entraban.` : "") +
-    (lista.length >= def.huecos ? " §7Mochila llena." : ""));
+  abrirMochila(player, ranura);
 }
 
 /* ---------- eventos ---------- */

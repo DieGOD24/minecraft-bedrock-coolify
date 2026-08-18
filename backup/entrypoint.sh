@@ -52,6 +52,32 @@ else
   sleep "$BACKUP_INITIAL_DELAY_SECONDS"
 fi
 
+# --- Verificacion de addons -----------------------------------------------
+# Comprueba que BDS realmente CARGO el addon, no solo que los archivos estan.
+# `testfor` con un tipo de entidad no crea ni destruye nada: si el addon cargo,
+# responde "No targets matched selector" (tipo valido, cero instancias); si no,
+# da un error de tipo desconocido. Un `summon`+`kill` seria destructivo, porque
+# el kill alcanzaria las lapidas reales de los jugadores.
+: "${ADDON_CHECK_ENTITIES:=}"
+
+verificar_addons() {
+  local ent salida
+  for ent in $ADDON_CHECK_ENTITIES; do
+    salida=$(/usr/local/bin/console-ssh.sh "testfor @e[type=$ent]" 2>&1 | tr -d '')
+    if printf '%s' "$salida" | grep -qi "no targets matched\|matched .* target"; then
+      log "ADDON OK: la entidad '$ent' existe -> el pack esta cargado"
+    else
+      log "ADDON WARNING: '$ent' no reconocida. Respuesta:"
+      printf '%s
+' "$salida" | grep -v '^###' | sed 's/^/    /' | head -5
+    fi
+  done
+}
+
+if [[ -n "${RCON_PASSWORD:-}" && -n "$ADDON_CHECK_ENTITIES" ]]; then
+  verificar_addons
+fi
+
 # --- Vigilancia de jugadores ----------------------------------------------
 # Consulta `list` cada rato y lo registra SOLO cuando la lista cambia. Es la
 # unica forma de saber quien esta conectado: BDS escribe eso en el stdout de su

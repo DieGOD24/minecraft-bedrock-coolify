@@ -68,12 +68,37 @@ Todo se controla con variables de entorno en `docker-compose.yml`; la imagen gen
 `server.properties` a partir de ellas. No edites `server.properties` a mano dentro del
 contenedor: se sobreescribe en cada arranque y el cambio no queda versionado.
 
-### Poner admins
+### Permisos y trucos
+
+`ALLOW_CHEATS: "true"` enciende el sistema de trucos, pero **no basta**: ejecutar
+comandos exige permiso de *operator*. Con `DEFAULT_PLAYER_PERMISSION_LEVEL: "member"`
+el juego rechaza los comandos aunque los trucos estén activos.
+
+Hoy está en `operator`, así que **todo el que entra puede usar comandos**. Como el
+servidor además está abierto, cualquier desconocido que encuentre la IP entra con
+permisos de administrador. Si aparece griefing, hay dos salidas:
 
 ```yaml
+ALLOW_LIST_USERS: "Gamertag1,Gamertag2"     # cerrar quién entra (recomendado)
+```
+```yaml
+DEFAULT_PLAYER_PERMISSION_LEVEL: "member"   # y dar op solo a los tuyos
 OPS: "TuGamertag,OtroGamertag"
 ```
 La imagen resuelve los gamertags a XUID sola y genera `permissions.json`.
+
+### Gamerules
+
+Los gamerules (coordenadas, keepinventory, etc.) **no** son `server.properties`:
+viven en `level.dat` y solo se cambian por consola. Por eso el sidecar los aplica en
+cada arranque desde `STARTUP_COMMANDS`, usando el mismo canal de consola que el
+`save hold` de los backups:
+
+```yaml
+STARTUP_COMMANDS: |
+  gamerule showcoordinates true
+  gamerule keepinventory true
+```
 
 ### Allowlist
 

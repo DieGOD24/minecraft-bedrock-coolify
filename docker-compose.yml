@@ -31,7 +31,12 @@ services:
       SERVER_PORT: "19132"
       VIEW_DISTANCE: "16"
       TICK_DISTANCE: "4"
-      DEFAULT_PLAYER_PERMISSION_LEVEL: "member"
+      # operator = todo el que entre puede usar comandos (/give, /gamemode, /kill...).
+      # Combinado con ALLOW_LIST=false esto significa que CUALQUIER desconocido que
+      # encuentre la IP entra con permisos de administrador. Decision consciente para
+      # no depender de gamertags; si aparece griefing, el arreglo es llenar
+      # ALLOW_LIST_USERS, o volver esto a "member" y usar OPS con gamertags.
+      DEFAULT_PLAYER_PERMISSION_LEVEL: "operator"
 
       # El VPS es dual-stack (tiene IPv6). Sin esto BDS puede quedarse
       # escuchando solo en IPv6 y los clientes IPv4 no lo encuentran.

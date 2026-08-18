@@ -134,51 +134,42 @@ En su lugar: `AUTO_OP_PLAYERS` en el sidecar manda `op <nombre>` por la consola 
 apenas ve al jugador conectado, y **BDS resuelve el XUID el mismo**. Ademas
 `fix-permissions.sh` limpia en cada arranque las entradas con `xuid` invalido.
 
-## Mapa: por que NO hay minimapa siempre visible
+## Mapa: por que el addon NO dibuja uno
 
-Bedrock no tiene puente script->UI para dibujar graficos: un behavior pack solo
-puede empujar **texto**. Para pintar una cuadricula permanente existen cuatro
-canales y ninguno queda libre:
+Bedrock no tiene puente script->UI para dibujar: un behavior pack solo puede
+empujar **texto**. Se intento una cuadricula de caracteres coloreados y quedo mal:
+los codigos `§` dan **28 colores** como maximo contra los **248** de un mapa real,
+y las filas de texto quedan separadas entre si.
+
+Lo que si se ve bien es el mapa de Minecraft, porque *es* un mapa de Minecraft.
+Asi que la brujula abre un menu con la opcion **Conseguir mapa**, que entrega un
+mapa localizador vacio.
+
+El valor auxiliar del item no esta documentado de forma fiable, asi que
+`darMapa()` **prueba variantes y usa la primera que el servidor acepta**
+(`runCommand` lanza `CommandError` si falla), y registra cual funciono.
+
+### Y tampoco hay minimapa permanente
+
+Para una cuadricula siempre visible existen cuatro canales y ninguno queda libre:
 
 | Canal | Estado |
 |---|---|
-| `ui/hud_screen.json` | Lo ocupa WAILA. Bedrock **no fusiona** los JSON de UI: gana el pack de mayor prioridad, el otro desaparece entero |
-| Titulo (si es multilinea) | Lo **secuestra WAILA**: su script manda el texto con prefijo `_r4ui:` y su UI lo intercepta. Dos scripts pelearian por el mismo canal |
-| Barra de accion | Libre, pero de **una sola linea**. El multilinea es una peticion abierta, no una funcion |
-| Scoreboard lateral | Multilinea, pero el slot de display es **global del mundo**, no por jugador |
+| `ui/hud_screen.json` | Lo ocupa WAILA. Bedrock **no fusiona** los JSON de UI: gana uno, el otro desaparece entero |
+| Titulo (si es multilinea) | Lo **secuestra WAILA**: su script manda el texto con prefijo `_r4ui:` |
+| Barra de accion | Libre, pero de **una sola linea** |
+| Scoreboard lateral | Multilinea, pero el slot es **global del mundo**, no por jugador |
 
-La unica alternativa seria forkear el `hud_screen.json` de WAILA **y** su script:
-un fork ajeno a rehacer en cada actualizacion. Descartado.
+### Sin fuente propia
 
-Por eso el mapa es **bajo demanda**, en un formulario (que si acepta multilinea).
-Ventaja lateral: solo lee terreno cuando lo abris, asi que el coste continuo sobre
-el servidor es **cero**.
+Hubo una version con `RP/font/glyph_25.png` generada a medida, porque el resource
+pack vanilla no trae esa pagina y `█ ▲ ● ╳ ◆` no existen en la fuente de Bedrock.
+Al quitar el mapa de texto dejo de hacer falta: se borro. El script usa solo ASCII
+y `§`, asi que no depende de ninguna fuente.
 
-### Como funciona
+### No dividir el script en varios archivos
 
-- **`dimension.getTopmostBlock()`** (API estable) da la columna visible. La lectura
-  masiva `getBlocks()` habria sido mas rapida pero es **experimental**.
-- El muestreo va en un generador lanzado con **`system.runJob()`** (estable), que le
-  da una porcion de tiempo por tick. Una rejilla de 25x25 son 625 llamadas; en un
-  solo tick podrian disparar el watchdog y trabar el servidor.
-- Si `getTopmostBlock` falla (chunk sin cargar) esa celda se pinta como desconocida
-  en vez de romper el mapa.
-- La brujula abre el mapa. No hay comando de chat porque `beforeEvents.chatSend` es
-  **experimental** y marcaria el mundo para siempre.
-
-### La fuente: RP/font/glyph_25.png
-
-El resource pack **vanilla no trae `glyph_25.png`** (sus paginas arrancan en
-`glyph_2E`). Esa pagina cubre U+2500-U+25FF, donde viven `█ ▲ ● ╳ ◆`. Sin ella el
-mapa se veria como cajas vacias.
-
-Se genera con `tools/gen-glyphs.py` (Pillow): PNG 256x256, rejilla de 16x16 celdas
-de 16 px; la celda sale del byte bajo del codepoint. Los glifos van en **blanco**
-porque Minecraft multiplica la textura por el color del texto, asi los codigos `§`
-los tiñen.
-
-Todos ocupan el **ancho completo** de la celda a proposito: Bedrock deduce el ancho
-buscando el pixel no transparente mas a la derecha, y si los marcadores fueran mas
-angostos que `█` la rejilla se desalinearia.
-
-Como vanilla no define esa pagina, no se pisa nada de nadie.
+Se intento separarlo en `main.js` + `mapa.js` con `import ... from "./mapa.js"` y
+el pack **dejo de cargar entero**: en Bedrock, si un modulo falla al importar no
+corre NADA, asi que hasta el reloj de dia/hora desaparecio. WAILA, el unico addon
+con scripts que funciona aqui, es un unico bundle de 239 KB sin imports relativos.

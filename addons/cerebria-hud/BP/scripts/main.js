@@ -1,43 +1,37 @@
 /*
  * Cerebria HUD
  *
- * 1. Dia, hora del juego, hora real y brujula en la barra de accion.
- * 2. Al morir guarda donde quedo la tumba y te lo recuerda con distancia en vivo.
- * 3. Mapa cenital bajo demanda (brujula), con jugadores, tumba y waypoints.
+ * 1. Dia, hora del juego, hora real y rumbo en la barra de accion.
+ * 2. Al morir guarda donde quedo la tumba y te guia con distancia en vivo.
+ * 3. La brujula abre un menu: conseguir el mapa localizador y gestionar waypoints.
  *
  * Todo usa @minecraft/server ESTABLE (2.4.0). Nada de Beta APIs, porque activar
  * experimentos marcaria el mundo de forma permanente e irreversible.
  *
- * TODO EN UN SOLO ARCHIVO a proposito. Se intento dividirlo en main.js + mapa.js
- * con un import relativo y el script dejo de cargar por completo (en Bedrock, si
- * un modulo falla al importar no corre NADA del pack, asi que hasta el reloj
- * desaparecio). El unico addon con scripts que funciona en este servidor, WAILA,
- * viene como un unico bundle de 239 KB sin imports relativos. No dividir esto.
+ * POR QUE NO HAY MAPA DIBUJADO POR EL ADDON
+ * Bedrock no tiene puente script->UI para dibujar: un pack solo puede empujar
+ * TEXTO. Se intento una cuadricula de caracteres coloreados y se veia mal, porque
+ * los codigos § dan 28 colores como maximo contra los 248 de un mapa real, y las
+ * filas de texto quedan separadas entre si. Lo que si se ve bien es el mapa de
+ * Minecraft... porque es un mapa de Minecraft: el addon te lo entrega y ya.
  *
- * Por que la barra de accion y no un HUD propio: WAILA ocupa ui/hud_screen.json y
- * Bedrock no fusiona los JSON de UI, asi que tocar ese archivo lo apagaria entero.
+ * TODO EN UN SOLO ARCHIVO a proposito. Al dividirlo en main.js + mapa.js con un
+ * import relativo, el pack dejo de cargar entero y hasta el reloj desaparecio. El
+ * unico addon con scripts que funciona en este servidor, WAILA, es un unico bundle
+ * sin imports relativos. No dividir esto.
+ *
+ * Sin fuente propia: se usan caracteres ASCII normales para no depender de una
+ * pagina de glifos que el cliente podria no tener.
  */
 
 import { world, system } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 
 const PROP_TUMBA = "cerebria:tumba";        // "x,y,z,dimensionId"
-const PROP_ZOOM = "cerebria:zoom";
 const PROP_WAYPOINTS = "cerebria:waypoints";
 
 const RADIO_LLEGADA = 4;        // bloques: a esta distancia la tumba se da por hallada
 const UTC_OFFSET_HORAS = -5;    // Colombia, sin horario de verano
-
-const RADIO = 12;               // 12 -> rejilla de 25x25 celdas
-const ZOOMS = [1, 2, 4, 8];     // bloques por celda
-
-// Glifos de RP/font/glyph_25.png. El resource pack vanilla NO trae esa pagina
-// (sus paginas arrancan en glyph_2E); sin ella esto se veria como cajas vacias.
-const TILE = "█";     // bloque lleno
-const YO = "▲";       // triangulo
-const JUGADOR = "●";  // circulo
-const TUMBA = "╳";    // cruz
-const WP = "◆";       // rombo
 
 /* ---------- utilidades de tiempo ---------- */
 
@@ -98,14 +92,13 @@ function distancia(a, b) {
   return Math.round(Math.sqrt(dx * dx + dz * dz));
 }
 
-/* ---------- tumba ---------- */
-
-function guardarTumba(player, loc, dimensionId) {
-  player.setDynamicProperty(
-    PROP_TUMBA,
-    `${Math.floor(loc.x)},${Math.floor(loc.y)},${Math.floor(loc.z)},${dimensionId}`
-  );
+function nombreDimension(id) {
+  if (id.indexOf("nether") !== -1) return "Nether";
+  if (id.indexOf("the_end") !== -1) return "End";
+  return "Overworld";
 }
+
+/* ---------- tumba ---------- */
 
 function leerTumba(player) {
   const raw = player.getDynamicProperty(PROP_TUMBA);
@@ -117,29 +110,19 @@ function leerTumba(player) {
   return { x: x, y: y, z: z, d: p[3] };
 }
 
-function borrarTumba(player) {
-  player.setDynamicProperty(PROP_TUMBA, undefined);
-}
-
-function nombreDimension(id) {
-  if (id.indexOf("nether") !== -1) return "Nether";
-  if (id.indexOf("the_end") !== -1) return "End";
-  return "Overworld";
-}
-
 function textoTumba(player) {
   const t = leerTumba(player);
   if (!t) return null;
   if (player.dimension.id !== t.d) {
-    return `§7${TUMBA} Tumba en §f${nombreDimension(t.d)}§7: ${t.x} ${t.y} ${t.z}`;
+    return `§7Tumba en §f${nombreDimension(t.d)}§7: ${t.x} ${t.y} ${t.z}`;
   }
   const d = distancia(player.location, t);
   if (d <= RADIO_LLEGADA) {
-    borrarTumba(player);
-    player.sendMessage(`§a${TUMBA} Llegaste a tu tumba.`);
+    player.setDynamicProperty(PROP_TUMBA, undefined);
+    player.sendMessage("§aLlegaste a tu tumba.");
     return null;
   }
-  return `§c${TUMBA} §f${t.x} ${t.y} ${t.z} §7(${d}m ${rumboHacia(player.location, t)})`;
+  return `§cTumba §f${t.x} ${t.y} ${t.z} §7(${d}m ${rumboHacia(player.location, t)})`;
 }
 
 /* ---------- waypoints ---------- */
@@ -159,170 +142,72 @@ function guardarWaypoints(player, lista) {
   player.setDynamicProperty(PROP_WAYPOINTS, JSON.stringify(lista.slice(0, 20)));
 }
 
-/* ---------- paleta del mapa ---------- */
-// [color claro, color oscuro] segun la altura respecto al jugador, para dar relieve.
-const PALETA = [
-  [["water", "kelp", "seagrass", "bubble"], ["9", "1"]],
-  [["lava", "magma", "fire"], ["c", "4"]],
-  [["grass", "moss", "leaves", "azalea", "vine", "fern"], ["a", "2"]],
-  [["sand", "sandstone", "glass"], ["e", "6"]],
-  [["snow", "powder_snow"], ["f", "7"]],
-  [["ice", "packed_ice", "blue_ice"], ["b", "3"]],
-  [["log", "wood", "plank", "stem", "hyphae"], ["6", "4"]],
-  [["dirt", "podzol", "mud", "clay", "gravel", "rooted"], ["6", "8"]],
-  [["netherrack", "nether_wart", "crimson", "soul"], ["4", "4"]],
-  [["obsidian", "bedrock", "deepslate", "basalt", "blackstone"], ["8", "8"]],
-  [["ore", "raw_", "diamond", "gold", "iron", "copper"], ["b", "3"]],
-  [["wool", "concrete", "terracotta", "brick", "wall", "slab", "stairs"], ["d", "5"]],
-  [["farmland", "wheat", "crop", "hay", "melon", "pumpkin"], ["e", "6"]]
+/* ---------- entrega del mapa localizador ---------- */
+/*
+ * El mapa localizador de Bedrock se hace con papel + brujula en una mesa de
+ * cartografia. Por comando, el valor auxiliar del item no esta documentado de
+ * forma fiable, asi que en vez de adivinar se prueban variantes y se usa la
+ * primera que el servidor acepta. runCommand lanza CommandError si falla.
+ */
+const VARIANTES_MAPA = [
+  ["empty_map", 2, "mapa localizador vacio"],
+  ["empty_map", 1, "mapa vacio (variante 1)"],
+  ["empty_map", 0, "mapa vacio"]
 ];
 
-function colorDe(typeId, dy) {
-  const id = typeId.replace("minecraft:", "");
-  const oscuro = dy < -3;
-  for (const entrada of PALETA) {
-    const claves = entrada[0];
-    const cols = entrada[1];
-    for (const k of claves) {
-      if (id.indexOf(k) !== -1) return oscuro ? cols[1] : cols[0];
-    }
-  }
-  return oscuro ? "8" : "7";   // piedra / desconocido
-}
-
-function zoomDe(player) {
-  const z = player.getDynamicProperty(PROP_ZOOM);
-  return ZOOMS.indexOf(z) !== -1 ? z : 2;
-}
-
-/* ---------- muestreo del terreno ---------- */
-/*
- * Generador a proposito: se lanza con system.runJob, que le da una porcion de
- * tiempo por tick. Una rejilla de 25x25 son 625 llamadas a getTopmostBlock; en un
- * solo tick eso podria disparar el watchdog y trabar el servidor.
- * getBlocks() (lectura masiva) seria mas rapido pero es API experimental.
- */
-function* muestrear(player, zoom, salida) {
-  const dim = player.dimension;
-  const cx = Math.floor(player.location.x);
-  const cz = Math.floor(player.location.z);
-  const py = player.location.y;
-
-  for (let fz = -RADIO; fz <= RADIO; fz++) {
-    const fila = [];
-    for (let fx = -RADIO; fx <= RADIO; fx++) {
-      let color = "0";   // negro = sin datos
-      try {
-        const b = dim.getTopmostBlock({ x: cx + fx * zoom, z: cz + fz * zoom });
-        if (b) color = colorDe(b.typeId, b.location.y - py);
-      } catch (e) {
-        // Chunk sin cargar u otro fallo: celda desconocida en vez de romper el mapa.
+function darMapa(player) {
+  const nombre = player.name.replace(/"/g, "");
+  for (const v of VARIANTES_MAPA) {
+    const cmd = `give "${nombre}" ${v[0]} 1 ${v[1]}`;
+    try {
+      const r = player.dimension.runCommand(cmd);
+      if (r && r.successCount > 0) {
+        player.sendMessage(`§aTe di un §f${v[2]}§a.`);
+        player.sendMessage("§7Usalo (mantene presionado) para crear el mapa. " +
+                           "Despues sostenelo en la mano para verlo.");
+        console.log(`[cerebria-hud] mapa entregado con: ${cmd}`);
+        return true;
       }
-      fila.push(color);
+    } catch (e) {
+      // Variante no aceptada por esta version; se prueba la siguiente.
     }
-    salida.push(fila);
-    yield;   // una fila por porcion de tiempo
   }
+  player.sendMessage("§cNo pude darte el mapa por comando.");
+  player.sendMessage("§7Hacelo a mano: papel + brujula en una mesa de cartografia.");
+  console.warn("[cerebria-hud] ninguna variante de `give ... empty_map` funciono");
+  return false;
 }
 
-function pintarMarcadores(rejilla, player, zoom) {
-  const cx = Math.floor(player.location.x);
-  const cz = Math.floor(player.location.z);
-  const marcas = [];
+/* ---------- menu de la brujula ---------- */
 
-  const celda = function (p) {
-    const fx = Math.round((p.x - cx) / zoom);
-    const fz = Math.round((p.z - cz) / zoom);
-    if (Math.abs(fx) > RADIO || Math.abs(fz) > RADIO) return undefined;
-    return [fz + RADIO, fx + RADIO];
-  };
-
-  for (const otro of world.getAllPlayers()) {
-    if (otro.id === player.id) continue;
-    if (otro.dimension.id !== player.dimension.id) continue;
-    const c = celda(otro.location);
-    if (c) marcas.push([c, "f", JUGADOR]);
-  }
-
+function abrirMenu(player) {
+  const wps = leerWaypoints(player);
   const t = leerTumba(player);
-  if (t && t.d === player.dimension.id) {
-    const c = celda(t);
-    if (c) marcas.push([c, "c", TUMBA]);
+  const l = player.location;
+
+  let cuerpo = `§7Estas en §f${Math.floor(l.x)} ${Math.floor(l.y)} ${Math.floor(l.z)} ` +
+               `§7(${nombreDimension(player.dimension.id)})\n` +
+               `§7Mirando al §f${rumboDesdeYaw(player.getRotation().y)}`;
+  if (t) {
+    const mismaDim = t.d === player.dimension.id;
+    cuerpo += `\n§cTumba: §f${t.x} ${t.y} ${t.z}`;
+    if (mismaDim) cuerpo += ` §7(${distancia(l, t)}m ${rumboHacia(l, t)})`;
+    else cuerpo += ` §7en ${nombreDimension(t.d)}`;
   }
 
-  for (const w of leerWaypoints(player)) {
-    if (w.d !== player.dimension.id) continue;
-    const c = celda(w);
-    if (c) marcas.push([c, "e", WP]);
-  }
-
-  // El jugador va ultimo para quedar siempre encima.
-  marcas.push([[RADIO, RADIO], "f", YO]);
-
-  for (const m of marcas) {
-    rejilla[m[0][0]][m[0][1]] = "§" + m[1] + m[2];
-  }
-}
-
-function componer(rejilla) {
-  const lineas = [];
-  for (const fila of rejilla) {
-    let s = "";
-    for (const c of fila) s += c.length > 1 ? c : "§" + c + TILE;
-    lineas.push(s);
-  }
-  return lineas.join("\n");
-}
-
-/* ---------- formularios del mapa ---------- */
-
-function abrirMapa(player) {
-  const zoom = zoomDe(player);
-  const rejilla = [];
-
-  system.runJob((function* () {
-    yield* muestrear(player, zoom, rejilla);
-    pintarMarcadores(rejilla, player, zoom);
-
-    const l = player.location;
-    const rot = player.getRotation();
-    const wps = leerWaypoints(player);
-    const lado = RADIO * 2 * zoom;
-
-    const cuerpo =
-      componer(rejilla) + "\n\n" +
-      `§7X §f${Math.floor(l.x)}  §7Y §f${Math.floor(l.y)}  ` +
-      `§7Z §f${Math.floor(l.z)}  §7mirando §f${rumboDesdeYaw(rot.y)}\n` +
-      `§7escala §f1 celda = ${zoom} bloque${zoom > 1 ? "s" : ""} ` +
-      `§8(${lado} bloques de lado)\n` +
-      `§f${YO}§7 vos  §f${JUGADOR}§7 jugadores  ` +
-      `§c${TUMBA}§7 tumba  §e${WP}§7 waypoints`;
-
-    const f = new ActionFormData()
-      .title("Mapa")
-      .body(cuerpo)
-      .button("Acercar")
-      .button("Alejar")
-      .button("Marcar este lugar")
-      .button(`Waypoints (${wps.length})`)
-      .button("Cerrar");
-
-    f.show(player).then(function (res) {
+  new ActionFormData()
+    .title("Brujula")
+    .body(cuerpo)
+    .button("Conseguir mapa")
+    .button("Marcar este lugar")
+    .button(`Mis waypoints (${wps.length})`)
+    .button("Cerrar")
+    .show(player).then(function (res) {
       if (res.canceled) return;
-      const i = ZOOMS.indexOf(zoom);
-      if (res.selection === 0) {
-        player.setDynamicProperty(PROP_ZOOM, ZOOMS[Math.max(0, i - 1)]);
-        abrirMapa(player);
-      } else if (res.selection === 1) {
-        player.setDynamicProperty(PROP_ZOOM, ZOOMS[Math.min(ZOOMS.length - 1, i + 1)]);
-        abrirMapa(player);
-      } else if (res.selection === 2) {
-        marcarAqui(player);
-      } else if (res.selection === 3) {
-        listarWaypoints(player);
-      }
+      if (res.selection === 0) darMapa(player);
+      else if (res.selection === 1) marcarAqui(player);
+      else if (res.selection === 2) listarWaypoints(player);
     }).catch(function () {});
-  })());
 }
 
 function marcarAqui(player) {
@@ -343,27 +228,30 @@ function marcarAqui(player) {
         d: player.dimension.id
       });
       guardarWaypoints(player, lista);
-      player.sendMessage(`§e${WP} Waypoint §f${nombre}§e guardado.`);
+      player.sendMessage(`§eWaypoint §f${nombre}§e guardado.`);
     }).catch(function () {});
 }
 
 function listarWaypoints(player) {
   const lista = leerWaypoints(player);
   if (lista.length === 0) {
-    player.sendMessage("§7No tenes waypoints. Usa \"Marcar este lugar\" en el mapa.");
+    player.sendMessage("§7No tenes waypoints. Usa \"Marcar este lugar\".");
     return;
   }
   const f = new ActionFormData().title("Waypoints").body("§7Toca uno para borrarlo.");
   for (const w of lista) {
-    f.button(`${w.n}\n§7${w.x} ${w.y} ${w.z} - ${distancia(player.location, w)}m ` +
-             `${rumboHacia(player.location, w)}`);
+    const mismaDim = w.d === player.dimension.id;
+    const detalle = mismaDim
+      ? `${distancia(player.location, w)}m ${rumboHacia(player.location, w)}`
+      : nombreDimension(w.d);
+    f.button(`${w.n}\n§7${w.x} ${w.y} ${w.z} - ${detalle}`);
   }
-  f.button("§7Volver al mapa");
+  f.button("§7Volver");
 
   f.show(player).then(function (res) {
     if (res.canceled) return;
     if (res.selection === lista.length) {
-      abrirMapa(player);
+      abrirMenu(player);
       return;
     }
     const borrado = lista.splice(res.selection, 1)[0];
@@ -380,12 +268,15 @@ world.afterEvents.entityDie.subscribe((ev) => {
   try {
     const loc = e.location;
     const dim = e.dimension.id;
-    guardarTumba(e, loc, dim);
+    e.setDynamicProperty(
+      PROP_TUMBA,
+      `${Math.floor(loc.x)},${Math.floor(loc.y)},${Math.floor(loc.z)},${dim}`
+    );
     e.sendMessage(
-      `§c☠ Moriste en §f${Math.floor(loc.x)} ${Math.floor(loc.y)} ${Math.floor(loc.z)} ` +
+      `§c* Moriste en §f${Math.floor(loc.x)} ${Math.floor(loc.y)} ${Math.floor(loc.z)} ` +
       `§7(${nombreDimension(dim)})`
     );
-    e.sendMessage("§7Usa una §fbrujula§7 para abrir el mapa y ver donde quedo.");
+    e.sendMessage("§7La distancia a la tumba te va a seguir en pantalla.");
   } catch (err) {
     console.warn(`[cerebria-hud] no pude guardar la tumba: ${err}`);
   }
@@ -396,38 +287,35 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
   const t = leerTumba(ev.player);
   if (!t) return;
   ev.player.sendMessage(
-    `§e${TUMBA} Tu tumba quedo en §f${t.x} ${t.y} ${t.z} §7(${nombreDimension(t.d)})`
+    `§eTu tumba quedo en §f${t.x} ${t.y} ${t.z} §7(${nombreDimension(t.d)})`
   );
 });
 
-// La brujula abre el mapa. Sustituye a un comando de chat porque
+// La brujula abre el menu. Sustituye a un comando de chat porque
 // world.beforeEvents.chatSend es EXPERIMENTAL, y usarlo obligaria a activar Beta
 // APIs y marcar el mundo para siempre.
 world.afterEvents.itemUse.subscribe((ev) => {
   const item = ev.itemStack;
   if (!item || item.typeId !== "minecraft:compass") return;
   try {
-    abrirMapa(ev.source);
+    abrirMenu(ev.source);
   } catch (err) {
-    console.warn(`[cerebria-hud] no pude abrir el mapa: ${err}`);
+    console.warn(`[cerebria-hud] no pude abrir el menu: ${err}`);
   }
 });
 
 /* ---------- bucle de la barra de accion ---------- */
 
-// Guia al objetivo mas cercano (tumba o waypoint) para la barra de accion.
+// Guia al waypoint mas cercano de la dimension actual.
 function guiaMasCercana(player) {
-  const objetivos = [];
-  for (const w of leerWaypoints(player)) {
-    if (w.d === player.dimension.id) objetivos.push({ n: `${WP} ${w.n}`, c: "e", p: w });
-  }
-  if (objetivos.length === 0) return null;
   let mejor = null, mejorD = Infinity;
-  for (const o of objetivos) {
-    const d = distancia(player.location, o.p);
-    if (d < mejorD) { mejorD = d; mejor = o; }
+  for (const w of leerWaypoints(player)) {
+    if (w.d !== player.dimension.id) continue;
+    const d = distancia(player.location, w);
+    if (d < mejorD) { mejorD = d; mejor = w; }
   }
-  return `§${mejor.c}${mejor.n} §f${mejorD}m ${rumboHacia(player.location, mejor.p)}`;
+  if (!mejor) return null;
+  return `§e${mejor.n} §f${mejorD}m ${rumboHacia(player.location, mejor)}`;
 }
 
 system.runInterval(() => {
@@ -435,18 +323,14 @@ system.runInterval(() => {
   const hj = horaDelJuego();
   const hr = horaReal();
 
-  let base = `§b☀ Dia ${dia} §7| §f${hj} §7${franja()}`;
+  let base = `§bDia ${dia} §7| §f${hj} §7${franja()}`;
   if (hr) base += ` §7| §f${hr} §7real`;
 
   for (const player of world.getAllPlayers()) {
     try {
       // Todo en UNA linea: la barra de accion de Bedrock no soporta multilinea
-      // (es una peticion abierta, no una funcion). Por eso el mapa va aparte, en
-      // un formulario, donde si se puede pintar una cuadricula.
-      let linea = base;
-
-      const rot = player.getRotation();
-      linea += ` §7| §f${YO} ${rumboDesdeYaw(rot.y)}`;
+      // (es una peticion abierta, no una funcion).
+      let linea = `${base} §7| §f${rumboDesdeYaw(player.getRotation().y)}`;
 
       // textoTumba() ademas borra la tumba al llegar, asi que se llama siempre.
       const tumba = textoTumba(player);

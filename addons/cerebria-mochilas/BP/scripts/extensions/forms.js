@@ -1,4 +1,5 @@
-import { Container } from '@minecraft/server';
+// MODIFICADO: se quito `import { Container } from '@minecraft/server'`. Solo se
+// usaba en comentarios JSDoc, y si no es un export en runtime tumba el modulo.
 import { ActionFormData } from '@minecraft/server-ui';
 import { custom_content, custom_content_keys, inventory_enabled, number_of_custom_items, CHEST_UI_SIZES } from './constants.js';
 import { typeIdToDataId, typeIdToID } from './typeIds.js';

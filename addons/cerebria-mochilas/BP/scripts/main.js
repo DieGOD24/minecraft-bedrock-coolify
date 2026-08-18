@@ -329,4 +329,19 @@ world.afterEvents.itemUse.subscribe((ev) => {
   } catch (e) { /* ignorado */ }
 });
 
+/*
+ * Sonda de carga. Un objetivo de scoreboard solo puede existir si este script
+ * llego a ejecutarse, y se puede consultar por consola con
+ * `scoreboard objectives list`. Los console.log van al stdout del contenedor
+ * bedrock, que la API de Coolify no expone, asi que no sirven para diagnosticar.
+ */
+try {
+  const sb = world.scoreboard;
+  if (!sb.getObjective("mochilas_ok")) {
+    sb.addObjective("mochilas_ok", "mochilas cargadas");
+  }
+} catch (e) {
+  console.warn(`[mochilas] no pude crear la sonda: ${e}`);
+}
+
 console.log("[mochilas] cargado");

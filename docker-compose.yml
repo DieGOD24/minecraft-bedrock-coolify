@@ -135,10 +135,11 @@ services:
       # logs del sidecar. Se usa un nombre de jugador inexistente a proposito: si
       # la SINTAXIS es valida responde "No targets matched", y si no, error de
       # sintaxis. Asi se valida el comando sin darle nada a nadie.
+      # `scoreboard objectives list` revela si el SCRIPT llego a correr. El `give`
+      # no servia para eso: los items los define el modulo data, asi que existen
+      # aunque el modulo de script muera.
       CONSOLE_CHECKS: |
-        give "__syntaxcheck__" cerebria:mochila_cuero
-        give "__syntaxcheck__" cerebria:mochila_hierro
-        give "__syntaxcheck__" cerebria:mochila_netherita
+        scoreboard objectives list
       # Jugadores a los que dar operador por consola apenas se los vea online.
       # BDS resuelve el XUID el mismo, sin depender de ninguna API externa.
       AUTO_OP_PLAYERS: "sebas GT1858,VeroB1297,WillowyWharf91"

@@ -133,3 +133,52 @@ error. Eso genero un `permissions.json` invalido que dejo a todos sin comandos.
 En su lugar: `AUTO_OP_PLAYERS` en el sidecar manda `op <nombre>` por la consola SSH
 apenas ve al jugador conectado, y **BDS resuelve el XUID el mismo**. Ademas
 `fix-permissions.sh` limpia en cada arranque las entradas con `xuid` invalido.
+
+## Mapa: por que NO hay minimapa siempre visible
+
+Bedrock no tiene puente script->UI para dibujar graficos: un behavior pack solo
+puede empujar **texto**. Para pintar una cuadricula permanente existen cuatro
+canales y ninguno queda libre:
+
+| Canal | Estado |
+|---|---|
+| `ui/hud_screen.json` | Lo ocupa WAILA. Bedrock **no fusiona** los JSON de UI: gana el pack de mayor prioridad, el otro desaparece entero |
+| Titulo (si es multilinea) | Lo **secuestra WAILA**: su script manda el texto con prefijo `_r4ui:` y su UI lo intercepta. Dos scripts pelearian por el mismo canal |
+| Barra de accion | Libre, pero de **una sola linea**. El multilinea es una peticion abierta, no una funcion |
+| Scoreboard lateral | Multilinea, pero el slot de display es **global del mundo**, no por jugador |
+
+La unica alternativa seria forkear el `hud_screen.json` de WAILA **y** su script:
+un fork ajeno a rehacer en cada actualizacion. Descartado.
+
+Por eso el mapa es **bajo demanda**, en un formulario (que si acepta multilinea).
+Ventaja lateral: solo lee terreno cuando lo abris, asi que el coste continuo sobre
+el servidor es **cero**.
+
+### Como funciona
+
+- **`dimension.getTopmostBlock()`** (API estable) da la columna visible. La lectura
+  masiva `getBlocks()` habria sido mas rapida pero es **experimental**.
+- El muestreo va en un generador lanzado con **`system.runJob()`** (estable), que le
+  da una porcion de tiempo por tick. Una rejilla de 25x25 son 625 llamadas; en un
+  solo tick podrian disparar el watchdog y trabar el servidor.
+- Si `getTopmostBlock` falla (chunk sin cargar) esa celda se pinta como desconocida
+  en vez de romper el mapa.
+- La brujula abre el mapa. No hay comando de chat porque `beforeEvents.chatSend` es
+  **experimental** y marcaria el mundo para siempre.
+
+### La fuente: RP/font/glyph_25.png
+
+El resource pack **vanilla no trae `glyph_25.png`** (sus paginas arrancan en
+`glyph_2E`). Esa pagina cubre U+2500-U+25FF, donde viven `█ ▲ ● ╳ ◆`. Sin ella el
+mapa se veria como cajas vacias.
+
+Se genera con `tools/gen-glyphs.py` (Pillow): PNG 256x256, rejilla de 16x16 celdas
+de 16 px; la celda sale del byte bajo del codepoint. Los glifos van en **blanco**
+porque Minecraft multiplica la textura por el color del texto, asi los codigos `§`
+los tiñen.
+
+Todos ocupan el **ancho completo** de la celda a proposito: Bedrock deduce el ancho
+buscando el pixel no transparente mas a la derecha, y si los marcadores fueran mas
+angostos que `█` la rejilla se desalinearia.
+
+Como vanilla no define esa pagina, no se pisa nada de nadie.

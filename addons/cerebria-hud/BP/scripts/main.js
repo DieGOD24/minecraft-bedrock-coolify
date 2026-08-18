@@ -13,6 +13,7 @@
  */
 
 import { world, system } from "@minecraft/server";
+import { abrirMapa, rumboDesdeYaw, rumboHacia, distancia, leerWaypoints } from "./mapa.js";
 
 const PROP_TUMBA = "cerebria:tumba";   // "x,y,z,dimensionId"
 const RADIO_LLEGADA = 4;               // bloques: a esta distancia se considera encontrada
@@ -134,15 +135,42 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
 // usarlo obligaria a activar Beta APIs y marcar el mundo para siempre.
 world.afterEvents.itemUse.subscribe((ev) => {
   if (ev.itemStack?.typeId !== "minecraft:compass") return;
-  const t = leerTumba(ev.source);
-  if (!t) {
-    ev.source.sendMessage("§7No tienes ninguna tumba pendiente.");
-    return;
+  // La brujula abre el mapa: ahi se ven la tumba, los waypoints y los jugadores.
+  // Sustituye a un comando de chat porque beforeEvents.chatSend es EXPERIMENTAL,
+  // y usarlo obligaria a activar Beta APIs y marcar el mundo para siempre.
+  try {
+    abrirMapa(ev.source);
+  } catch (err) {
+    console.warn(`[cerebria-hud] no pude abrir el mapa: ${err}`);
   }
-  ev.source.sendMessage(
-    `§e⚰ Tumba: §f${t.x} ${t.y} ${t.z} §7(${nombreDimension(t.dimensionId)})`
-  );
 });
+
+// Rumbo y distancia al objetivo mas cercano, para la barra de accion.
+function guiaMasCercana(player) {
+  const objetivos = [];
+  const t = leerTumbaCrudaLocal(player);
+  if (t && t.d === player.dimension.id) objetivos.push({ n: "╳", c: "c", p: t });
+  for (const w of leerWaypoints(player)) {
+    if (w.d === player.dimension.id) objetivos.push({ n: "◆ " + w.n, c: "e", p: w });
+  }
+  if (objetivos.length === 0) return null;
+  let mejor = null, mejorD = Infinity;
+  for (const o of objetivos) {
+    const d = distancia(player.location, o.p);
+    if (d < mejorD) { mejorD = d; mejor = o; }
+  }
+  return `§${mejor.c}${mejor.n} §f${mejorD}m ${rumboHacia(player.location, mejor.p)}`;
+}
+
+function leerTumbaCrudaLocal(player) {
+  const raw = player.getDynamicProperty(PROP_TUMBA);
+  if (typeof raw !== "string") return undefined;
+  const p = raw.split(",");
+  if (p.length !== 4) return undefined;
+  const x = Number(p[0]), y = Number(p[1]), z = Number(p[2]);
+  if (!isFinite(x) || !isFinite(z)) return undefined;
+  return { x, y, z, d: p[3] };
+}
 
 /* ---------- bucle de la barra de accion ---------- */
 
@@ -156,8 +184,22 @@ system.runInterval(() => {
 
   for (const player of world.getAllPlayers()) {
     try {
+      // Todo en UNA linea: la barra de accion de Bedrock no soporta multilinea
+      // (es una peticion abierta, no una funcion). Por eso el mapa va aparte,
+      // en un formulario, donde si se puede pintar una cuadricula.
+      const partes = [base];
+
+      // Brujula: hacia donde mira el jugador.
+      const rot = player.getRotation();
+      partes.push(`§7| §f▲ ${rumboDesdeYaw(rot.y)}`);
+
+      // textoTumba() ademas borra la tumba al llegar, asi que se llama siempre.
       const tumba = textoTumba(player);
-      player.onScreenDisplay.setActionBar(tumba ? `${base}   ${tumba}` : base);
+      const guia = guiaMasCercana(player);
+      if (tumba) partes.push(`  ${tumba}`);
+      else if (guia) partes.push(`§7| ${guia}`);
+
+      player.onScreenDisplay.setActionBar(partes.join(" "));
     } catch (err) {
       // Un jugador que se desconecta a mitad del tick no debe romper el resto.
     }

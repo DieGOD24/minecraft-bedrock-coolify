@@ -88,7 +88,9 @@ services:
     # por eso Coolify muestra running:healthy sin config extra.
 
   backup:
-    build: ./backup
+    build:
+      context: .
+      dockerfile: backup/Dockerfile
     restart: unless-stopped
     depends_on:
       - bedrock
@@ -112,6 +114,9 @@ services:
       TZ: "America/Bogota"
       RCON_PASSWORD: "${RCON_PASSWORD}"
       BEDROCK_SSH_HOST: "${BEDROCK_SSH_HOST:-bedrock}"
+      # Debe coincidir con LEVEL_NAME de bedrock: install-addons.sh escribe
+      # la activacion dentro de /data/worlds/<LEVEL_NAME>/.
+      LEVEL_NAME: "world"
       # Comandos que se mandan a la consola de BDS en cada arranque, uno por linea.
       # Es la unica via para fijar gamerules desde el repo: no son server.properties,
       # viven en level.dat y solo se cambian por consola. El sidecar puede hacerlo

@@ -15,6 +15,11 @@ log() { echo "[backup] $(date '+%Y-%m-%d %H:%M:%S %Z') $*"; }
 log "Iniciado. Intervalo de backup: ${BACKUP_INTERVAL_SECONDS}s."
 log "Para disparar un backup a mano: docker exec <contenedor-backup> /usr/local/bin/backup.sh"
 
+# --- Addons ---------------------------------------------------------------
+# Se corre antes que nada: si cambia la activacion, hay que reiniciar y conviene
+# que quede avisado arriba del todo en los logs.
+/usr/local/bin/install-addons.sh
+
 # --- Comandos de arranque -------------------------------------------------
 # Los gamerules viven en level.dat, asi que basta con aplicarlos una vez; pero
 # reenviarlos en cada arranque es idempotente y mantiene el mundo alineado con
@@ -59,7 +64,8 @@ fi
 vigilar_jugadores() {
   local previo="" actual
   while true; do
-    if actual=$(/usr/local/bin/console-ssh.sh "list" 2>/dev/null | grep -iE 'players online|^[[:space:]]*[A-Za-z0-9]' | grep -v '^###' | tr -s ' ' ' ' | paste -sd'|' -); then
+    if actual=$(/usr/local/bin/console-ssh.sh "list" 2>/dev/null | grep -iE 'players online|^[[:space:]]*[A-Za-z0-9]' | grep -v '^###' | tr -s ' 
+' ' ' | paste -sd'|' -); then
       if [[ -n "$actual" && "$actual" != "$previo" ]]; then
         log "JUGADORES: $actual"
         previo="$actual"

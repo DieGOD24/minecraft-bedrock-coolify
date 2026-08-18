@@ -40,6 +40,12 @@ services:
       # ALLOW_LIST_USERS, o volver esto a "member" y usar OPS con gamertags.
       DEFAULT_PLAYER_PERMISSION_LEVEL: "operator"
 
+      # Obliga a aceptar TODOS los resource packs del servidor (texturas, y los
+      # de WAILA y Graves). El costo real: quien rechace la descarga, o a quien
+      # le falle, NO PUEDE ENTRAR. Por eso los packs se eligen livianos: con
+      # jugadores en datos moviles, un pack pesado deja gente afuera.
+      TEXTUREPACK_REQUIRED: "true"
+
       # El VPS es dual-stack (tiene IPv6). Sin esto BDS puede quedarse
       # escuchando solo en IPv6 y los clientes IPv4 no lo encuentran.
       ENABLE_BDS_V6BIND_FIX: "true"

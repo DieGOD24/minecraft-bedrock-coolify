@@ -66,3 +66,23 @@ WAILA sobrescribe `ui/hud_screen.json`. Bedrock **no fusiona** los JSON de UI: s
 otro pack define el mismo archivo, gana el de mayor prioridad y el otro deja de
 verse por completo. Cualquier minimapa de Bedrock toca ese mismo archivo, así que
 convivirían solo fusionando ambos a mano en un pack combinado.
+
+## vanilla-pvp-16x.mcpack
+
+[spzxn/Vanilla-PvP-16x](https://github.com/spzxn/Vanilla-PvP-16x) V0.1-beta, **licencia MIT**.
+Texturas 16x que mantienen el aspecto clasico, optimizadas para rendimiento.
+
+Elegido por el peso: **1,7 MB**. Como el servidor corre con
+`texturepack-required=true`, cada jugador *debe* aceptar la descarga para entrar,
+y con gente en datos moviles un pack pesado deja gente afuera. Para comparar, la
+alternativa jg-rtx va de 10,6 MB (32x) a **527 MB** (256x).
+
+Solo modulo `resources`, sin scripts ni APIs -> no toca experimentos. No define
+`ui/hud_screen.json`, asi que convive con WAILA.
+
+### PureBDcraft: no es posible
+
+Para Bedrock existe **unicamente en el Minecraft Marketplace**, y el contenido del
+Marketplace esta **cifrado y atado a la cuenta compradora**: un servidor dedicado
+no puede servirlo aunque se haya pagado. Ademas los terminos de BDcraft prohiben
+hospedarlo o redistribuirlo. No hay workaround.

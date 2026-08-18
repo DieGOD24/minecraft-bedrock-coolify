@@ -173,3 +173,49 @@ Se intento separarlo en `main.js` + `mapa.js` con `import ... from "./mapa.js"` 
 el pack **dejo de cargar entero**: en Bedrock, si un modulo falla al importar no
 corre NADA, asi que hasta el reloj de dia/hora desaparecio. WAILA, el unico addon
 con scripts que funciona aqui, es un unico bundle de 239 KB sin imports relativos.
+
+## Waypoints: nativos, no dibujados a mano
+
+Antes se pintaban como texto en la barra de accion, ocupandola todo el tiempo. Eso
+era una **reimplementacion peor de algo que el juego ya resuelve**: `player.locatorBar`
+es API estable y pinta el marcador en el HUD con color e icono propios.
+
+| API usada | Para que |
+|---|---|
+| `player.locatorBar` | marcadores nativos en el HUD (`addWaypoint`, `removeAllWaypoints`, `count`, `maxCount`) |
+| `new LocationWaypoint(dimLoc, selector, color)` | punto fijo con color RGB e icono |
+| `WaypointTexture` | `Square` para waypoints, `SmallStar` para la tumba |
+| `player.spawnParticle(...)` | el haz de luz, **privado del jugador** |
+
+### Dos trampas de la API
+
+**La barra localizadora NO persiste entre sesiones.** La doc avisa que los
+waypoints invalidos se limpian al tick siguiente. Por eso `sincronizarBarra()` se
+llama en `playerSpawn`, en `playerDimensionChange` y en cada cambio. Si los
+marcadores desaparecen al reconectar, ese es el primer sitio a mirar.
+
+**`maxCount` es un tope real**: `addWaypoint` lanza error al pasarse, asi que se
+comprueba antes y se avisa por chat en vez de reventar.
+
+Se borra y se repuebla la barra entera en cada sincronizacion porque
+`removeAllWaypoints` solo alcanza a los waypoints de **este** pack ("You can only
+modify, remove, or query waypoints that were added by this pack"), asi que es
+seguro e idempotente.
+
+### El haz de luz
+
+`player.spawnParticle` esta documentado como *"Only visible to the target player"*,
+o sea que cada jugador ve solo sus propios puntos y nadie ensucia la pantalla ajena.
+
+- `minecraft:endrod` para waypoints, `minecraft:basic_flame_particle` para la tumba.
+- Columna de 40 bloques, una particula cada 2, dos veces por segundo.
+- **Solo a menos de 96 bloques**: mas lejos el cliente no lo renderiza igual, asi
+  que emitir seria gasto puro. Peor caso medido: 240 particulas/s por jugador.
+
+### Tocar un waypoint ya no lo borra
+
+Abre un submenu: ir aqui (con confirmacion), renombrar, mover aqui
+(`setDimensionLocation`), cambiar color y borrar (tambien con confirmacion).
+
+El teletransporte usa `player.teleport()` con respaldo por `tp` en comando. La
+confirmacion esta a proposito: un toque accidental en survival puede costar caro.

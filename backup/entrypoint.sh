@@ -47,23 +47,33 @@ else
   sleep "$BACKUP_INITIAL_DELAY_SECONDS"
 fi
 
-# --- Sonda de la consola SSH ----------------------------------------------
-# Publica en los logs DEL SIDECAR la respuesta de `list`. Es la unica forma de
-# ver los gamertags conectados: BDS los escribe en el stdout de su contenedor y
-# la API de Coolify no expone ese contenedor (ver console-ssh.sh).
+# --- Vigilancia de jugadores ----------------------------------------------
+# Consulta `list` cada rato y lo registra SOLO cuando la lista cambia. Es la
+# unica forma de saber quien esta conectado: BDS escribe eso en el stdout de su
+# contenedor y la API de Coolify no expone ese contenedor (ver console-ssh.sh).
+# Registrar solo los cambios evita inundar los logs y deja un historial de
+# entradas y salidas. Ademas permite consultarlo sin redesplegar, que es lo que
+# antes obligaba a echar a todos.
+: "${PLAYER_POLL_SECONDS:=300}"
+
+vigilar_jugadores() {
+  local previo="" actual
+  while true; do
+    if actual=$(/usr/local/bin/console-ssh.sh "list" 2>/dev/null | grep -iE 'players online|^[[:space:]]*[A-Za-z0-9]' | grep -v '^###' | tr -s ' ' ' ' | paste -sd'|' -); then
+      if [[ -n "$actual" && "$actual" != "$previo" ]]; then
+        log "JUGADORES: $actual"
+        previo="$actual"
+      fi
+    fi
+    sleep "$PLAYER_POLL_SECONDS"
+  done
+}
+
 if [[ -n "${RCON_PASSWORD:-}" ]]; then
-  log "Consultando la consola por SSH (list)..."
-  if salida=$(/usr/local/bin/console-ssh.sh "list" 2>&1); then
-    log "respuesta de la consola:"
-    printf '%s
-' "$salida" | sed 's/^/    /'
-  else
-    log "WARNING: la consola SSH no respondio. Detalle:"
-    printf '%s
-' "$salida" | sed 's/^/    /'
-  fi
+  log "Consola SSH activa. Vigilando jugadores cada ${PLAYER_POLL_SECONDS}s."
+  vigilar_jugadores &
 else
-  log "RCON_PASSWORD no definido: se omite la consola SSH."
+  log "RCON_PASSWORD no definido: sin consola SSH ni vigilancia de jugadores."
 fi
 
 # --- Bucle de respaldo ----------------------------------------------------

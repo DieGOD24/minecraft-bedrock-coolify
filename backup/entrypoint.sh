@@ -15,6 +15,12 @@ log() { echo "[backup] $(date '+%Y-%m-%d %H:%M:%S %Z') $*"; }
 log "Iniciado. Intervalo de backup: ${BACKUP_INTERVAL_SECONDS}s."
 log "Para disparar un backup a mano: docker exec <contenedor-backup> /usr/local/bin/backup.sh"
 
+# --- Permisos ---------------------------------------------------------------
+# Antes que nada: la imagen escribe gamertags crudos en el campo xuid cuando la
+# API de resolucion falla, y ese permissions.json corrupto puede dejar a todos
+# sin permisos. Ver backup/fix-permissions.sh.
+/usr/local/bin/fix-permissions.sh
+
 # --- Addons ---------------------------------------------------------------
 # Se corre antes que nada: si cambia la activacion, hay que reiniciar y conviene
 # que quede avisado arriba del todo en los logs.
@@ -91,6 +97,29 @@ fi
 # antes obligaba a echar a todos.
 : "${PLAYER_POLL_SECONDS:=300}"
 
+# Da operador por consola a los jugadores de AUTO_OP_PLAYERS que esten online.
+#
+# Se usa `op <nombre>` y no la variable OPS de la imagen a proposito: OPS resuelve
+# los gamertags contra mcprofile.io, que hoy devuelve HTTP 523, y ante el fallo
+# escribe el gamertag crudo en el campo xuid sin avisar. BDS, en cambio, resuelve
+# el XUID por su cuenta a partir del jugador conectado. Es idempotente.
+: "${AUTO_OP_PLAYERS:=}"
+
+auto_op() {
+  [[ -z "${AUTO_OP_PLAYERS//[[:space:]]/}" ]] && return 0
+  local lista_online="$1" nombre salida
+  local IFS=','
+  for nombre in $AUTO_OP_PLAYERS; do
+    nombre="$(printf '%s' "$nombre" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -z "$nombre" ]] && continue
+    # Solo si BDS lo reporta conectado: necesita al jugador presente para resolver el XUID.
+    printf '%s' "$lista_online" | grep -qF "$nombre" || continue
+    salida=$(/usr/local/bin/console-ssh.sh "op $nombre" 2>&1 | grep -v '^###' | tr -d '' | tr -s ' 
+' ' ')
+    log "op '$nombre' -> ${salida:-sin respuesta}"
+  done
+}
+
 vigilar_jugadores() {
   local previo="" actual
   while true; do
@@ -99,6 +128,7 @@ vigilar_jugadores() {
       if [[ -n "$actual" && "$actual" != "$previo" ]]; then
         log "JUGADORES: $actual"
         previo="$actual"
+        auto_op "$actual"
       fi
     fi
     sleep "$PLAYER_POLL_SECONDS"

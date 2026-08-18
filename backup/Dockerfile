@@ -14,12 +14,18 @@ RUN apk add --no-cache \
  && chmod +x /usr/local/bin/mc \
  && mc --version
 
-COPY backup/lib-console.sh backup/backup.sh backup/entrypoint.sh \
-     backup/console-ssh.sh backup/install-addons.sh /usr/local/bin/
+COPY backup/lib-console.sh \
+     backup/backup.sh \
+     backup/entrypoint.sh \
+     backup/console-ssh.sh \
+     backup/install-addons.sh \
+     backup/fix-permissions.sh \
+     /usr/local/bin/
 RUN chmod +x /usr/local/bin/backup.sh \
              /usr/local/bin/entrypoint.sh \
              /usr/local/bin/console-ssh.sh \
-             /usr/local/bin/install-addons.sh
+             /usr/local/bin/install-addons.sh \
+             /usr/local/bin/fix-permissions.sh
 
 COPY addons/ /addons/
 

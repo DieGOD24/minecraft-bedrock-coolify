@@ -86,3 +86,50 @@ Para Bedrock existe **unicamente en el Minecraft Marketplace**, y el contenido d
 Marketplace esta **cifrado y atado a la cuenta compradora**: un servidor dedicado
 no puede servirlo aunque se haya pagado. Ademas los terminos de BDcraft prohiben
 hospedarlo o redistribuirlo. No hay workaround.
+
+## cerebria-hud/ (pack propio)
+
+Behavior pack escrito para este servidor. Vive como **directorio**, no como
+`.mcaddon`: `install-addons.sh` acepta ambos, asi el codigo queda legible y
+revisable en git sin paso de empaquetado.
+
+Hace dos cosas:
+
+1. **Barra de accion permanente** con dia, hora del juego y hora real:
+   `☀ Dia 47 | 14:35 Tarde | 22:10 real`
+2. **Aviso de tumba**: al morir guarda la posicion, la manda por chat, y mientras
+   no llegues la muestra en la barra de accion con la **distancia en vivo**. Se
+   borra sola a ~4 bloques. Una **brujula** vuelve a mostrar el dato.
+
+### Decisiones que no son obvias
+
+**Por que la barra de accion y no un HUD propio.** WAILA ocupa `ui/hud_screen.json`
+y Bedrock no fusiona los JSON de UI: cualquier pack que tocara ese archivo apagaria
+WAILA por completo. La barra de accion no la usa nadie.
+
+**Por que una brujula y no un comando de chat.** `world.beforeEvents.chatSend` es
+**experimental**. Un `!tumba` obligaria a activar Beta APIs, que marca el mundo de
+forma permanente e irreversible. `world.afterEvents.itemUse` es estable.
+
+**Por que no se reemplazo el addon Graves.** Cambiarlo dejaria huerfanas las
+entidades `hatchi:grave` que ya existen en el mundo, y quien tenga objetos dentro
+los perderia. Este pack lo complementa.
+
+**La hora real usa un offset fijo UTC-5** en vez del TZ del contenedor, porque no
+esta garantizado que el motor de scripts lo respete. Colombia no tiene horario de
+verano, asi que es correcto todo el año. Si `Date` no existiera en el motor, el
+codigo omite la hora real y sigue mostrando el resto.
+
+Todo con `@minecraft/server@2.4.0`, la version **estable** que ya usa WAILA en este
+servidor. Sin experimentos.
+
+## Nota: por que NO se usa la variable OPS
+
+`OPS` resuelve gamertags a XUID contra `mcprofile.io`, y esa API devuelve
+**HTTP 523**. Ante el fallo, `resolveXuid()` de la imagen hace
+`echo "${xuid:-$value}"`: escribe el **gamertag crudo** en el campo `xuid`, sin
+error. Eso genero un `permissions.json` invalido que dejo a todos sin comandos.
+
+En su lugar: `AUTO_OP_PLAYERS` en el sidecar manda `op <nombre>` por la consola SSH
+apenas ve al jugador conectado, y **BDS resuelve el XUID el mismo**. Ademas
+`fix-permissions.sh` limpia en cada arranque las entradas con `xuid` invalido.

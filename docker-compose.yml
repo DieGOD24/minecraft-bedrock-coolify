@@ -25,8 +25,6 @@ services:
       GAMEMODE: "survival"
       DIFFICULTY: "hard"
       LEVEL_NAME: "world"
-      # Entidades cuya existencia prueba que el addon cargo de verdad.
-      ADDON_CHECK_ENTITIES: "hatchi:grave"
       MAX_PLAYERS: "10"
       ALLOW_CHEATS: "true"      # habilita comandos/trucos en el mundo
       ONLINE_MODE: "true"
@@ -77,12 +75,12 @@ services:
       # y pone allow-list=true solo, ignorando el "false" de arriba.
       # ALLOW_LIST_USERS: "Gamertag1,Gamertag2"
       #
-      # Admins. Acepta gamertags (los resuelve a XUID) o XUIDs directos.
-      # Obtenidos con `list` por la consola SSH, no a mano.
-      # Hoy son redundantes porque DEFAULT_PLAYER_PERMISSION_LEVEL=operator ya
-      # da permisos a todos; quedan declarados para poder cerrar ese default a
-      # "member" sin que estos jugadores pierdan sus comandos.
-      OPS: "sebas GT1858,VeroB1297,WillowyWharf91"
+      # OPS quitado A PROPOSITO. La imagen resuelve los gamertags a XUID contra
+      # mcprofile.io, que devuelve HTTP 523, y ante el fallo escribe el gamertag
+      # CRUDO en el campo xuid sin avisar. Eso genero un permissions.json
+      # invalido y dejo a todos sin comandos.
+      # Los operadores se dan ahora con AUTO_OP_PLAYERS (ver servicio backup),
+      # que usa `op` por consola y deja que BDS resuelva el XUID el mismo.
     volumes:
       - bedrock-data:/data
     # Mayor que STOP_SERVER_ANNOUNCE_DELAY: si no, el aviso se corta y el mundo
@@ -127,6 +125,9 @@ services:
       LEVEL_NAME: "world"
       # Entidades cuya existencia prueba que el addon cargo de verdad.
       ADDON_CHECK_ENTITIES: "hatchi:grave"
+      # Jugadores a los que dar operador por consola apenas se los vea online.
+      # BDS resuelve el XUID el mismo, sin depender de ninguna API externa.
+      AUTO_OP_PLAYERS: "sebas GT1858,VeroB1297,WillowyWharf91"
       # Comandos que se mandan a la consola de BDS en cada arranque, uno por linea.
       # Es la unica via para fijar gamerules desde el repo: no son server.properties,
       # viven en level.dat y solo se cambian por consola. El sidecar puede hacerlo

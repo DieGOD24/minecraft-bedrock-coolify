@@ -8,6 +8,9 @@
 #    unicamente llega al mundo si el pack trae su propio level.dat.
 # Resultado: sin esto, el pack queda instalado pero el mundo lo ignora.
 #
+# Acepta .mcaddon, .mcpack y tambien DIRECTORIOS, para que los packs propios
+# vivan como archivos legibles y revisables en git, sin paso de empaquetado.
+#
 # La activacion surte efecto en el ARRANQUE SIGUIENTE: BDS lee world_*_packs.json
 # al cargar el mundo, y este sidecar corre despues del servidor.
 set -uo pipefail
@@ -20,28 +23,37 @@ DATA=/data
 WORLD="$DATA/worlds/$LEVEL_NAME"
 
 shopt -s nullglob
-paquetes=("$ADDONS_DIR"/*.mcaddon "$ADDONS_DIR"/*.mcpack)
+paquetes=("$ADDONS_DIR"/*.mcaddon "$ADDONS_DIR"/*.mcpack "$ADDONS_DIR"/*/)
 shopt -u nullglob
 if [[ ${#paquetes[@]} -eq 0 ]]; then
   log "No hay addons en $ADDONS_DIR."
-  return 0 2>/dev/null || exit 0
+  exit 0
 fi
 
 if [[ ! -d "$WORLD" ]]; then
   log "WARNING: el mundo $WORLD todavia no existe; se omite la instalacion."
-  return 0 2>/dev/null || exit 0
+  exit 0
 fi
 
 declare -a bp_json=() rp_json=()
 
 for pack in "${paquetes[@]}"; do
-  tmp=$(mktemp -d)
-  if ! unzip -q -o "$pack" -d "$tmp"; then
-    log "ERROR: no pude descomprimir $(basename "$pack")"; rm -rf "$tmp"; continue
+  if [[ -d "$pack" ]]; then
+    # Pack en formato directorio: se lee tal cual. OJO: no se borra al final.
+    if [[ -z "$(find "$pack" -name manifest.json -print -quit 2>/dev/null)" ]]; then
+      log "aviso: $(basename "$pack") no tiene manifest.json, se ignora"
+      continue
+    fi
+    src="$pack"; limpiar=0
+  else
+    src=$(mktemp -d); limpiar=1
+    if ! unzip -q -o "$pack" -d "$src"; then
+      log "ERROR: no pude descomprimir $(basename "$pack")"; rm -rf "$src"; continue
+    fi
   fi
 
-  # Un .mcaddon puede traer varios packs; se clasifica cada uno por el tipo de
-  # sus modulos, no por el nombre de la carpeta (BP/RP, data/resources, etc.).
+  # Un pack puede traer varios sub-packs; se clasifica cada uno por el TIPO DE SUS
+  # MODULOS, no por el nombre de la carpeta (BP/RP, data/resources, etc.).
   while IFS= read -r manifest; do
     uuid=$(jq -r '.header.uuid' "$manifest" 2>/dev/null)
     ver=$(jq -c '.header.version' "$manifest" 2>/dev/null)
@@ -58,8 +70,9 @@ for pack in "${paquetes[@]}"; do
 
     entrada="{\"pack_id\":\"$uuid\",\"version\":$ver}"
     if [[ "$kind" == "behavior_packs" ]]; then bp_json+=("$entrada"); else rp_json+=("$entrada"); fi
-  done < <(find "$tmp" -name manifest.json)
-  rm -rf "$tmp"
+  done < <(find "$src" -name manifest.json)
+
+  [[ $limpiar -eq 1 ]] && rm -rf "$src"
 done
 
 # Escribe la activacion solo si cambio, para no reescribir el mundo en cada arranque.

@@ -1,0 +1,103 @@
+# Compara el pin de docker-compose.yml contra la versión oficial que publica
+# Mojang y abre un PR si hay una nueva. NUNCA mergea solo: subir de versión
+# migra el formato del mundo y no tiene vuelta atrás, así que la decisión
+# es siempre humana.
+name: check-bedrock-version
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Consultar la versión oficial de Mojang
+        id: upstream
+        run: |
+          set -euo pipefail
+          # Mismo endpoint que usa internamente itzg/docker-minecraft-bedrock-server.
+          url=$(curl -fsSL --retry 3 --retry-delay 5 \
+                  -A "minecraft-bedrock-coolify" \
+                  "https://net.web.minecraft-services.net/api/v1.0/download/links" \
+                | jq -r '.result.links[] | select(.downloadType=="serverBedrockLinux") | .downloadUrl')
+          echo "URL oficial: $url"
+          ver=$(printf '%s' "$url" | sed -nE 's/.*bedrock-server-([0-9.]+)\.zip.*/\1/p')
+          if [ -z "$ver" ]; then
+            echo "::error::No pude extraer la versión de la URL: $url"
+            exit 1
+          fi
+          echo "Versión oficial: $ver"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Leer el pin actual del repo
+        id: pinned
+        run: |
+          set -euo pipefail
+          ver=$(sed -nE 's/^[[:space:]]*VERSION:[[:space:]]*"([0-9.]+)".*/\1/p' docker-compose.yml | head -1)
+          if [ -z "$ver" ]; then
+            echo "::error::No encontré el pin VERSION en docker-compose.yml"
+            exit 1
+          fi
+          echo "Pin actual: $ver"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Abrir PR con la nueva versión
+        if: steps.upstream.outputs.version != steps.pinned.outputs.version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW: ${{ steps.upstream.outputs.version }}
+          OLD: ${{ steps.pinned.outputs.version }}
+        run: |
+          set -euo pipefail
+          branch="bump/bedrock-${NEW}"
+
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "Ya hay un PR abierto para $NEW. Nada que hacer."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          sed -i -E "s|^([[:space:]]*VERSION:[[:space:]]*\")[0-9.]+(\")|\1${NEW}\2|" docker-compose.yml
+          git diff --exit-code docker-compose.yml && { echo "::error::el sed no cambió nada"; exit 1; } || true
+          git commit -am "bedrock: ${OLD} -> ${NEW}"
+          git push -f -u origin "$branch"
+
+          body=$(cat <<EOF
+          Mojang publicó **Bedrock Dedicated Server \`${NEW}\`**. Este repo está fijado en \`${OLD}\`.
+
+          ### Antes de mergear
+          1. **Hacer un backup manual** — actualizar migra el formato del mundo y **no se puede revertir**:
+             \`\`\`
+             docker exec \$(docker ps -qf name=backup) /usr/local/bin/backup.sh
+             \`\`\`
+          2. Confirmar que tus jugadores ya tienen el cliente en \`${NEW}\` (un server más nuevo que el cliente rechaza la conexión).
+
+          Al mergear a \`main\`, el workflow \`deploy\` redespliega en Coolify solo.
+
+          _Detectado automáticamente contra \`net.web.minecraft-services.net/api/v1.0/download/links\`._
+          EOF
+          )
+
+          if ! gh pr create --base main --head "$branch" \
+                 --title "bedrock: ${OLD} -> ${NEW}" --body "$body"; then
+            echo "::warning::No pude crear el PR (¿'Allow GitHub Actions to create pull requests' desactivado?). Abro un issue."
+            gh issue create --title "Nueva versión de Bedrock disponible: ${NEW}" \
+              --body "$body
+
+          La rama \`${branch}\` ya está pusheada con el cambio; se puede abrir el PR a mano."
+          fi
+
+      - name: Sin cambios
+        if: steps.upstream.outputs.version == steps.pinned.outputs.version
+        run: echo "El pin (${{ steps.pinned.outputs.version }}) ya coincide con la versión oficial. Nada que hacer."

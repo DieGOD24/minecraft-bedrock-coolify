@@ -1,0 +1,81 @@
+# Minecraft Bedrock Dedicated Server — versión FIJADA, no LATEST.
+#
+# El valor de VERSION abajo es la única fuente de verdad de qué versión corre
+# el servidor. Se sube a mano (o mergeando el PR que abre la GitHub Action
+# .github/workflows/check-bedrock-version.yml). Nunca poner LATEST aquí:
+# Bedrock migra el formato del mundo al actualizar y no se puede volver atrás.
+
+services:
+  bedrock:
+    image: itzg/minecraft-bedrock-server:2026.8.1
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    ports:
+      # Bedrock es UDP. Coolify respeta este mapeo y hace bypass de Traefik,
+      # que no sabe enrutar UDP. Por eso la app NO lleva dominio.
+      - "19132:19132/udp"
+    environment:
+      EULA: "TRUE"
+
+      # >>> EL PIN <<<  versión oficial de Mojang (serverBedrockLinux)
+      VERSION: "1.26.44.3"
+
+      SERVER_NAME: "Cerebria Bedrock"
+      GAMEMODE: "survival"
+      DIFFICULTY: "normal"
+      LEVEL_NAME: "world"
+      MAX_PLAYERS: "10"
+      ALLOW_CHEATS: "false"
+      ONLINE_MODE: "true"
+      SERVER_PORT: "19132"
+      VIEW_DISTANCE: "16"
+      TICK_DISTANCE: "4"
+      DEFAULT_PLAYER_PERMISSION_LEVEL: "member"
+
+      # El VPS es dual-stack (tiene IPv6). Sin esto BDS puede quedarse
+      # escuchando solo en IPv6 y los clientes IPv4 no lo encuentran.
+      ENABLE_BDS_V6BIND_FIX: "true"
+
+      # --- Control de acceso (hoy: servidor ABIERTO) ---
+      # Descomentar con gamertags separados por coma activa la allowlist sola:
+      # la imagen genera allowlist.json y pone allow-list=true en server.properties.
+      # ALLOW_LIST_USERS: "Gamertag1,Gamertag2"
+      #
+      # Admins. Acepta gamertags (los resuelve a XUID) o XUIDs directos.
+      # OPS: "TuGamertag"
+    volumes:
+      - bedrock-data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    # La imagen ya trae HEALTHCHECK propio (mc-monitor status-bedrock),
+    # por eso Coolify muestra running:healthy sin config extra.
+
+  backup:
+    build: ./backup
+    restart: unless-stopped
+    depends_on:
+      - bedrock
+    # Comparte el PID namespace del server. Es lo que permite mandarle
+    # "save hold" / "save resume" a la consola de BDS para sacar un snapshot
+    # consistente, SIN montar /var/run/docker.sock (que daría control total
+    # del host a un contenedor de un stack expuesto a internet).
+    pid: "service:bedrock"
+    cap_add:
+      - SYS_PTRACE
+    volumes:
+      - bedrock-data:/data
+    environment:
+      MINIO_ENDPOINT: "${MINIO_ENDPOINT}"
+      MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY}"
+      MINIO_SECRET_KEY: "${MINIO_SECRET_KEY}"
+      MINIO_BUCKET: "${MINIO_BUCKET:-minecraft-backups}"
+      RETENTION_DAYS: "${RETENTION_DAYS:-14}"
+      BACKUP_INTERVAL_SECONDS: "${BACKUP_INTERVAL_SECONDS:-86400}"
+      BACKUP_INITIAL_DELAY_SECONDS: "${BACKUP_INITIAL_DELAY_SECONDS:-300}"
+      TZ: "America/Bogota"
+
+volumes:
+  bedrock-data:

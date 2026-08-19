@@ -482,3 +482,19 @@ El parser no se fia de "el ultimo numero de la respuesta": BDS antepone timestam
 llenos de digitos. Acepta las dos formas plausibles (`salud: 123` y `123 (salud`), y
 `LATIDO_DEBUG=1` deja la respuesta cruda en los logs para poder corregirlo si el
 formato no es ninguna de las dos.
+
+## BDS no manda `console.log` de los scripts a su stdout
+
+Instrumentar un addon con `console.log`/`console.warn` y luego buscar la salida en
+los logs **no funciona**. Comprobado: tras un `reload`, la linea `[mochilas] cargado`
+—que esta al nivel superior del modulo, asi que corre siempre— no aparecio en
+ningun log, mientras el latido del scoreboard demostraba que el script si corria.
+
+Esa salida va al **Content Log**, que viene apagado. Se enciende con
+`CONTENT_LOG_FILE_ENABLED: "true"`, que hace que BDS la escriba en un archivo
+dentro de `/data`; el sidecar lo busca y lo vuelca con prefijo `[log]`.
+
+Mientras eso no este confirmado, el unico canal fiable hacia una persona es
+`player.sendMessage()`. Por eso `mochilas.js` tiene un `diag()` que escribe a los
+dos sitios y unos comandos de chat (`!formtest`, `!mochilaplana`, `!mochilacofre`)
+para separar causas sin depender de los logs.

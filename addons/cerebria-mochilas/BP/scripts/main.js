@@ -2724,7 +2724,24 @@ export { ChestFormData, FurnaceFormData };
  * condicion que hace posible guardar el contenido dentro del propio item.
  */
 
+
 const PROP = "cerebria:contenido";
+
+/* ---------- diagnostico por chat ----------
+ * BDS NO manda la salida de console.log/warn de los scripts a su stdout: va al
+ * Content Log, que esta apagado. Lo comprobamos con un `reload`: la linea
+ * "[mochilas] cargado" no aparecio en los logs pese a que el latido demuestra
+ * que el script corre. Instrumentar con console.warn no sirve de nada aqui.
+ *
+ * El unico canal que si llega a una persona es el chat del propio jugador.
+ * Cuando la mochila vuelva a funcionar, poner DIAG en false.
+ */
+const DIAG = true;
+function diag(player, texto) {
+  console.warn(`[mochilas] ${texto}`);
+  if (!DIAG) return;
+  try { player.sendMessage(`§8[dbg] §7${texto}`); } catch (e) { }
+}
 
 /* Si cambias un tamano de `huecos`, hay que ACTIVAR ese layout en
  * RP/ui/_global_variables.json ($disable_N_slots_layout: false). Chest-UI viene
@@ -2883,6 +2900,15 @@ function tieneEncantamientos(stack) {
   }
 }
 
+/* Jugadores que pidieron la vista de LISTA en vez de la de cofre (!mochilaplana).
+ * Los indices de los botones son los mismos en las dos vistas, asi que el
+ * manejador de la respuesta no cambia: solo cambia como se dibuja. */
+const PLANO = new Set();
+
+function nombreVisible(o) {
+  return o.n || o.t.replace("minecraft:", "").replace(/_/g, " ");
+}
+
 function abrirMochila(player, ranura) {
   const c = contenedorDe(player);
   if (!c) return;
@@ -2891,28 +2917,44 @@ function abrirMochila(player, ranura) {
 
   const def = MOCHILAS[stack.typeId];
   const lista = leerContenido(stack);
-  const form = new ChestFormData(String(def.huecos)).title(def.nombre);
+  // Las ranuras del inventario que se dibujan DESPUES de los huecos, en su mismo
+  // orden. Se calcula antes de construir el formulario porque las dos vistas la
+  // necesitan y tiene que ser exactamente la misma lista que recorre show().
+  const ranurasInv = ranurasConItems(c);
+  const plano = PLANO.has(player.id);
 
-  for (let i = 0; i < lista.length && i < def.huecos; i++) {
-    const o = lista[i];
-    let vista;
-    try {
-      vista = deserializar(o);
-    } catch (e) {
-      continue;   // entrada corrupta: se salta en vez de romper la apertura
+  let form;
+  if (plano) {
+    form = new ActionFormData().title(def.nombre)
+      .body("§7Vista de lista. Volve al cofre con §f!mochilacofre");
+    for (let i = 0; i < def.huecos; i++) {
+      const o = lista[i];
+      form.button(o ? `${nombreVisible(o)} §7x${o.a || 1}` : "§8(vacio)");
     }
-    const nombre = o.n || o.t.replace("minecraft:", "").replace(/_/g, " ");
-    form.button(i, nombre, o.l || [], o.t, o.a || 1,
-                durabilidadRestante(vista), tieneEncantamientos(vista));
+    for (const s of ranurasInv) {
+      const it = c.getItem(s);
+      const n = it.typeId.replace("minecraft:", "").replace(/_/g, " ");
+      form.button(`§2Guardar §r${n} §7x${it.amount}`);
+    }
+  } else {
+    form = new ChestFormData(String(def.huecos)).title(def.nombre);
+    for (let i = 0; i < lista.length && i < def.huecos; i++) {
+      const o = lista[i];
+      let vista;
+      try {
+        vista = deserializar(o);
+      } catch (e) {
+        continue;   // entrada corrupta: se salta en vez de romper la apertura
+      }
+      form.button(i, nombreVisible(o), o.l || [], o.t, o.a || 1,
+                  durabilidadRestante(vista), tieneEncantamientos(vista));
+    }
   }
 
-  // Las ranuras del inventario que Chest-UI dibuja debajo, en su mismo orden.
-  const ranurasInv = ranurasConItems(c);
+  diag(player, `abriendo (${plano ? "lista" : "cofre"}): huecos=${def.huecos} guardados=${lista.length} ranurasInv=${ranurasInv.length}`);
 
   form.show(player).then(function (res) {
-    // DIAGNOSTICO: se ve en los logs gracias a bds-tail.sh. Sin esto no hay forma
-    // de saber si el clic llega, con que indice, o si el formulario se cancela.
-    console.warn(`[mochilas] respuesta: canceled=${res.canceled} motivo=${res.cancelationReason} sel=${res.selection} huecos=${def.huecos} enLista=${lista.length} ranurasInv=${ranurasInv.length}`);
+    diag(player, `respuesta: canceled=${res.canceled} motivo=${res.cancelationReason} sel=${res.selection}`);
     if (res.canceled) return;
     const sel = res.selection;
     if (sel < def.huecos) {
@@ -2932,7 +2974,7 @@ function abrirMochila(player, ranura) {
   }).catch(function (e) {
     // NUNCA vacio: este catch se tragaba en silencio cualquier error del manejador
     // (meterUno, sacarUno, serializar...) y el sintoma era "el clic no hace nada".
-    console.warn(`[mochilas] ERROR al procesar el clic: ${e}${e && e.stack ? " | " + e.stack : ""}`);
+    diag(player, `ERROR al procesar el clic: ${e}${e && e.stack ? " | " + e.stack : ""}`);
   });
 }
 
@@ -3028,6 +3070,56 @@ world.afterEvents.itemUse.subscribe((ev) => {
       c.setItem(ranura, actual);
     }
   } catch (e) { /* ignorado */ }
+});
+
+/* ---------- comandos de chat para separar causas ----------
+ * Sabemos que el script CORRE (el latido sube) y que la rejilla de cofre SE
+ * DIBUJA, pero el clic no hace nada. Faltaba distinguir dos cosas que se
+ * confunden, y sin logs de script no habia forma:
+ *
+ *   !formtest      abre un ActionForm NORMAL, sin Chest-UI. Si tampoco responde,
+ *                  lo roto son TODOS los formularios en el cliente, y el
+ *                  sospechoso es el override de ui/server_form.json que trae
+ *                  Chest-UI. Eso explicaria de paso que la brujula no responda.
+ *   !mochilaplana  dibuja la mochila como lista. Mismos indices de boton, misma
+ *                  logica: si esta si funciona, lo roto es solo la rejilla.
+ *   !mochilacofre  vuelve a la vista de cofre.
+ *
+ * chatSend es un beforeEvent (solo lectura), asi que mostrar el formulario va
+ * dentro de system.run.
+ */
+world.beforeEvents.chatSend.subscribe((ev) => {
+  const orden = ev.message.trim().toLowerCase();
+  if (orden !== "!formtest" && orden !== "!mochilaplana" && orden !== "!mochilacofre") return;
+  ev.cancel = true;
+  const player = ev.sender;
+
+  if (orden === "!mochilaplana") {
+    PLANO.add(player.id);
+    system.run(() => player.sendMessage("§aMochila en vista de LISTA. Abrila otra vez."));
+    return;
+  }
+  if (orden === "!mochilacofre") {
+    PLANO.delete(player.id);
+    system.run(() => player.sendMessage("§aMochila en vista de COFRE. Abrila otra vez."));
+    return;
+  }
+
+  system.run(function () {
+    new ActionFormData()
+      .title("Prueba de formulario")
+      .body("Toca cualquier boton. La respuesta sale en el chat.")
+      .button("Boton A")
+      .button("Boton B")
+      .button("Boton C")
+      .show(player)
+      .then(function (res) {
+        player.sendMessage(`§8[dbg] §7formtest: canceled=${res.canceled} motivo=${res.cancelationReason} sel=${res.selection}`);
+      })
+      .catch(function (e) {
+        player.sendMessage(`§8[dbg] §cformtest ERROR: ${e}`);
+      });
+  });
 });
 
 /* ---------- latido: prueba de que este script sigue VIVO ----------

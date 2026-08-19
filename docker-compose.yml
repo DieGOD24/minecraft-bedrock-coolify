@@ -54,6 +54,13 @@ services:
       # escuchando solo en IPv6 y los clientes IPv4 no lo encuentran.
       ENABLE_BDS_V6BIND_FIX: "true"
 
+      # Manda la salida de console.log/warn de los scripts a un archivo dentro de
+      # /data (el Content Log). Hace falta porque BDS NO la escribe en su stdout:
+      # se comprobo con un `reload`, tras el que "[mochilas] cargado" no aparecio
+      # en ningun log pese a que el latido prueba que el script corre. El sidecar
+      # busca ese archivo y lo vuelca con prefijo [log]; ver entrypoint.sh.
+      CONTENT_LOG_FILE_ENABLED: "true"
+
       # Consola remota por SSH en el 2222, NO publicada al host: solo alcanzable
       # desde dentro del stack. Es la unica via BIDIRECCIONAL a la consola. El
       # canal por /proc/<pid>/fd/0 que usa el sidecar escribe pero no lee, y la

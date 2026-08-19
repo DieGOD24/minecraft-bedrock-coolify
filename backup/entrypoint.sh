@@ -38,6 +38,31 @@ if [[ -n "${RCON_PASSWORD:-}" ]]; then
   sleep 5
 fi
 
+# --- Volcado del Content Log (la salida de console.log de los scripts) ------
+# HALLAZGO, y explica por que instrumentar con console.warn no sirvio de nada:
+# BDS NO manda la salida de console.log/warn de los scripts a su stdout. Se
+# comprobo con un `reload`: la linea "[mochilas] cargado", que esta al nivel
+# superior del modulo, no aparecio en ningun log, aunque el latido demuestra que
+# el script SI corre. Esa salida va al Content Log, apagado por defecto.
+#
+# Con CONTENT_LOG_FILE_ENABLED=true BDS lo escribe en un archivo dentro de /data,
+# que este sidecar comparte. Aqui se busca y se vuelca con prefijo [log]. Se
+# anuncia el archivo encontrado para saber en la proxima ronda si funciono; si
+# no aparece ninguno, el bucle no molesta a nadie.
+(
+  vistos=""
+  while :; do
+    while IFS= read -r f; do
+      case " $vistos " in *" $f "*) continue ;; esac
+      vistos="$vistos $f"
+      log "Content Log encontrado: $f"
+      tail -n 0 -F "$f" 2>/dev/null | awk '{ print "[log] " $0; fflush() }' &
+    done < <(find /data -maxdepth 2 \( -iname 'contentlog*' -o -iname '*.log' \) -type f 2>/dev/null)
+    sleep 30
+  done
+) &
+log "Buscando el Content Log de BDS en /data (prefijo [log])."
+
 # --- Comandos de arranque -------------------------------------------------
 # Los gamerules viven en level.dat, asi que basta con aplicarlos una vez; pero
 # reenviarlos en cada arranque es idempotente y mantiene el mundo alineado con

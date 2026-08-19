@@ -26,6 +26,18 @@ log "Para disparar un backup a mano: docker exec <contenedor-backup> /usr/local/
 # que quede avisado arriba del todo en los logs.
 /usr/local/bin/install-addons.sh
 
+# --- Volcado de la consola de BDS -------------------------------------------
+# Copia lo que escribe el servidor a ESTOS logs, que son los unicos que Coolify
+# devuelve. Sin esto no se ven los errores del motor de scripts ni los
+# console.log de los addons, y diagnosticar es adivinar. Ver bds-tail.sh.
+if [[ -n "${RCON_PASSWORD:-}" ]]; then
+  /usr/local/bin/bds-tail.sh &
+  log "Volcado de la consola de BDS iniciado (prefijo [bds])."
+  # Un margen para que la sesion este abierta antes de mandar nada: lo que se
+  # escriba antes de conectar no se ve.
+  sleep 5
+fi
+
 # --- Comandos de arranque -------------------------------------------------
 # Los gamerules viven en level.dat, asi que basta con aplicarlos una vez; pero
 # reenviarlos en cada arranque es idempotente y mantiene el mundo alineado con
@@ -56,18 +68,6 @@ if [[ -n "${STARTUP_COMMANDS//[[:space:]]/}" ]]; then
 else
   log "Sin comandos de arranque. Primer backup en ${BACKUP_INITIAL_DELAY_SECONDS}s."
   sleep "$BACKUP_INITIAL_DELAY_SECONDS"
-fi
-
-# --- Volcado de la consola de BDS -------------------------------------------
-# Copia lo que escribe el servidor a ESTOS logs, que son los unicos que Coolify
-# devuelve. Sin esto no se ven los errores del motor de scripts ni los
-# console.log de los addons, y diagnosticar es adivinar. Ver bds-tail.sh.
-if [[ -n "${RCON_PASSWORD:-}" ]]; then
-  /usr/local/bin/bds-tail.sh &
-  log "Volcado de la consola de BDS iniciado (prefijo [bds])."
-  # Un margen para que la sesion este abierta antes de mandar nada: lo que se
-  # escriba antes de conectar no se ve.
-  sleep 5
 fi
 
 # --- Comprobaciones por consola ---------------------------------------------
@@ -102,14 +102,23 @@ fi
 : "${SCRIPT_HEARTBEATS:=}"
 
 leer_latido() {   # $1 = participante -> imprime el numero, o vacio
-  # El formato de `scoreboard players list <jugador>` no esta documentado y BDS
-  # antepone timestamps llenos de digitos, asi que NO vale con "el ultimo numero".
-  # Se aceptan las dos formas plausibles: "salud: 123" y "123 (salud".
+  # ORDEN IMPORTANTE: primero se quita la linea '###' de console-ssh.sh y DESPUES
+  # los retornos de carro. Al reves, un tr que borre saltos de linea deja toda la
+  # respuesta en una sola linea que empieza por '###', y el grep la elimina entera:
+  # asi es como el latido salia siempre vacio.
+  #
+  # El CR se borra por su codigo octal (\015) y no como \r, para que ninguna
+  # herramienta de edicion lo convierta en un byte CR de verdad dentro del script.
   local cruda
-  cruda=$(/usr/local/bin/console-ssh.sh "scoreboard players list $1" 2>&1 | tr -d '
-' | grep -v '^###')
-  [[ -n "${LATIDO_DEBUG:-}" ]] && log "  latido crudo [$1]: $(printf '%s' "$cruda" | tr -s '[:space:]' ' ')"
-  printf '%s' "$cruda"     | grep -oiE "salud[^0-9-]{0,4}(-?[0-9]+)|(-?[0-9]+)[[:space:]]*\(salud"     | grep -oE '(-?[0-9]+)' | head -1
+  cruda=$(/usr/local/bin/console-ssh.sh "scoreboard players list $1" 2>&1 | grep -v '^###' | tr -d '\015')
+  # A STDERR sin falta: esta funcion DEVUELVE su valor por stdout y el log se
+  # colaba dentro, reportando 'VIVO' siempre porque dos logs con timestamps
+  # distintos nunca son iguales. Mismo fallo que ya cometi en version_por_contenido.
+  [[ -n "${LATIDO_DEBUG:-}" ]] && log "  latido crudo [$1]: $(printf '%s' "$cruda" | tr -s '[:space:]' ' ')" >&2
+  # No vale con 'el ultimo numero': BDS antepone timestamps llenos de digitos.
+  printf '%s' "$cruda" |
+    grep -oiE "salud[^0-9-]{0,4}(-?[0-9]+)|(-?[0-9]+)[[:space:]]*\(salud" |
+    grep -oE '(-?[0-9]+)' | head -1
 }
 
 verificar_latidos() {

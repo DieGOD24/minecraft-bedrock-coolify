@@ -2910,6 +2910,9 @@ function abrirMochila(player, ranura) {
   const ranurasInv = ranurasConItems(c);
 
   form.show(player).then(function (res) {
+    // DIAGNOSTICO: se ve en los logs gracias a bds-tail.sh. Sin esto no hay forma
+    // de saber si el clic llega, con que indice, o si el formulario se cancela.
+    console.warn(`[mochilas] respuesta: canceled=${res.canceled} motivo=${res.cancelationReason} sel=${res.selection} huecos=${def.huecos} enLista=${lista.length} ranurasInv=${ranurasInv.length}`);
     if (res.canceled) return;
     const sel = res.selection;
     if (sel < def.huecos) {
@@ -2926,7 +2929,11 @@ function abrirMochila(player, ranura) {
       return;
     }
     meterUno(player, ranura, origen);
-  }).catch(function () {});
+  }).catch(function (e) {
+    // NUNCA vacio: este catch se tragaba en silencio cualquier error del manejador
+    // (meterUno, sacarUno, serializar...) y el sintoma era "el clic no hace nada".
+    console.warn(`[mochilas] ERROR al procesar el clic: ${e}${e && e.stack ? " | " + e.stack : ""}`);
+  });
 }
 
 function sacarUno(player, ranura, indice) {

@@ -786,4 +786,27 @@ system.runInterval(() => {
   }
 }, 20);
 
+/* ---------- latido: prueba de que este script sigue VIVO ----------
+ * Un objetivo de scoreboard es PERSISTENTE: vive en el mundo. Que exista solo
+ * prueba que el script corrio alguna vez, no que corra ahora. La sonda anterior
+ * era justo eso, y por eso no servia para nada.
+ *
+ * Lo que se comprueba es que el numero SUBA entre dos lecturas. El sidecar lo
+ * lee con `scoreboard players list <participante>` y compara.
+ *
+ * Va dentro de runInterval y no al nivel superior del modulo: ahi estariamos en
+ * early-execution mode, con funciones restringidas, y fallaria sola.
+ */
+system.runInterval(function () {
+  try {
+    const sb = world.scoreboard;
+    const obj = sb.getObjective("salud") || sb.addObjective("salud", "salud de los scripts");
+    let n = 0;
+    try { n = obj.getScore("hud") || 0; } catch (e) { n = 0; }
+    obj.setScore("hud", (n + 1) % 1000000);
+  } catch (e) {
+    // No debe tumbar nada: es diagnostico, no funcionalidad.
+  }
+}, 40);
+
 console.log("[cerebria-hud] cargado");

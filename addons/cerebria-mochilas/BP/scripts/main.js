@@ -3023,25 +3023,27 @@ world.afterEvents.itemUse.subscribe((ev) => {
   } catch (e) { /* ignorado */ }
 });
 
-/*
- * Sonda de carga. Un objetivo de scoreboard solo puede existir si este script
- * llego a ejecutarse, y se puede consultar por consola con
- * `scoreboard objectives list`. Los console.log van al stdout del contenedor
- * bedrock, que la API de Coolify no expone, asi que no sirven para diagnosticar.
+/* ---------- latido: prueba de que este script sigue VIVO ----------
+ * Un objetivo de scoreboard es PERSISTENTE: vive en el mundo. Que exista solo
+ * prueba que el script corrio alguna vez, no que corra ahora. La sonda anterior
+ * era justo eso, y por eso no servia para nada.
+ *
+ * Lo que se comprueba es que el numero SUBA entre dos lecturas. El sidecar lo
+ * lee con `scoreboard players list <participante>` y compara.
+ *
+ * Va dentro de runInterval y no al nivel superior del modulo: ahi estariamos en
+ * early-execution mode, con funciones restringidas, y fallaria sola.
  */
-// Diferida con system.run a proposito: el nivel superior del modulo corre en
-// early-execution mode, donde varias funciones estan restringidas. Esta sonda
-// estaba ahi, fallaba sola, y me hizo concluir que el script no cargaba cuando si
-// lo hacia. Una sonda con falsos negativos es peor que ninguna.
-system.run(function () {
+system.runInterval(function () {
   try {
     const sb = world.scoreboard;
-    if (!sb.getObjective("mochilas_ok")) {
-      sb.addObjective("mochilas_ok", "mochilas cargadas");
-    }
+    const obj = sb.getObjective("salud") || sb.addObjective("salud", "salud de los scripts");
+    let n = 0;
+    try { n = obj.getScore("mochilas") || 0; } catch (e) { n = 0; }
+    obj.setScore("mochilas", (n + 1) % 1000000);
   } catch (e) {
-    console.warn(`[mochilas] no pude crear la sonda: ${e}`);
+    // No debe tumbar nada: es diagnostico, no funcionalidad.
   }
-});
+}, 40);
 
 console.log("[mochilas] cargado");

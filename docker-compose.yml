@@ -138,10 +138,22 @@ services:
       # `scoreboard objectives list` revela si el SCRIPT llego a correr: el objetivo
       # lo crea el script de mochilas. El `give` no servia para eso, porque los
       # items los define el modulo data y existen aunque el script muera.
-      # OJO: solo es fiable desde que la sonda se difiere con system.run; antes
-      # corria en early-execution mode y daba falsos negativos.
+      # `reload` recarga los behavior packs y con ellos los SCRIPTS. Se manda
+      # aqui a proposito: los errores de carga ocurren al cargar el mundo, antes
+      # de que este sidecar exista, asi que el volcado de consola no los ve.
+      # Forzar la recarga con la sesion ya abierta es la unica forma de que el
+      # error de un pack que no arranca salga en unos logs legibles.
       CONSOLE_CHECKS: |
         scoreboard objectives list
+        reload
+      # Participantes del objetivo `salud` que cada script incrementa. El sidecar
+      # lee cada uno DOS VECES separadas: si el numero sube, el pack esta vivo.
+      # Sustituye a la sonda vieja, que era un objetivo persistente y por tanto
+      # seguia existiendo aunque el script estuviera muerto.
+      SCRIPT_HEARTBEATS: "hud mochilas"
+      # Deja la respuesta cruda del scoreboard en los logs. Encendido hasta
+      # confirmar que el formato de `scoreboard players list` se parsea bien.
+      LATIDO_DEBUG: "1"
       # Jugadores a los que dar operador por consola apenas se los vea online.
       # BDS resuelve el XUID el mismo, sin depender de ninguna API externa.
       AUTO_OP_PLAYERS: "sebas GT1858,VeroB1297,WillowyWharf91"

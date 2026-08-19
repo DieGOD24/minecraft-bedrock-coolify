@@ -17,13 +17,13 @@ RUN apk add --no-cache \
 COPY backup/lib-console.sh \
      backup/backup.sh \
      backup/entrypoint.sh \
-     backup/console-ssh.sh \
+     backup/console-ssh.sh \n     backup/bds-tail.sh \
      backup/install-addons.sh \
      backup/fix-permissions.sh \
      /usr/local/bin/
 RUN chmod +x /usr/local/bin/backup.sh \
              /usr/local/bin/entrypoint.sh \
-             /usr/local/bin/console-ssh.sh \
+             /usr/local/bin/console-ssh.sh \n             /usr/local/bin/bds-tail.sh \
              /usr/local/bin/install-addons.sh \
              /usr/local/bin/fix-permissions.sh
 

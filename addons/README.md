@@ -440,3 +440,45 @@ encadenados que daban sintomas distintos y se arreglaron por separado:
    encontraba el layout: **pantalla transparente**.
 
 El paso de "lista" a "transparente" era una senal de progreso, no una regresion.
+
+## Ver los logs de BDS (se trabajaba a ciegas)
+
+Durante todo el proyecto no hubo forma de leer lo que escribe el servidor. La API de
+Coolify solo devuelve los logs del contenedor creado mas recientemente, y por
+`pid: service:bedrock` ese es SIEMPRE el sidecar, nunca `bedrock`. Todo lo util --
+errores del motor de scripts, los `console.log` de los addons, avisos de carga de
+packs -- caia en un contenedor ilegible.
+
+Eso convirtio varios diagnosticos en adivinanzas, y las adivinanzas salieron caras.
+
+**`backup/bds-tail.sh`** abre una sesion SSH persistente contra la consola de
+mc-server-runner y copia su salida a los logs del sidecar con prefijo `[bds]`. La
+consola es bidireccional, asi que basta con no cerrar la sesion (`sleep infinity`
+mantiene stdin abierto).
+
+**Limite: solo se ve lo posterior a conectar.** Los errores de carga de scripts ocurren
+al cargar el mundo, antes de que el sidecar exista. Por eso `CONSOLE_CHECKS` manda
+`reload`: recarga los behavior packs con la sesion ya abierta, y ahi si se ve si un
+pack revienta y por que.
+
+### El latido, y por que la sonda anterior no valia
+
+La sonda vieja creaba el objetivo `mochilas_ok`. **Un objetivo de scoreboard es
+persistente**: vive en el mundo y sobrevive al script. Que exista solo prueba que el
+script corrio ALGUNA VEZ, no que corra ahora. Daba falsa tranquilidad, que es peor que
+no tener sonda.
+
+Ahora cada script incrementa un contador en el objetivo `salud` (participantes `hud` y
+`mochilas`) desde un `runInterval`. El sidecar lo lee **dos veces separadas** y compara:
+
+- sube            -> `LATIDO 'hud': VIVO`
+- no sube         -> `MUERTO`: el pack cargo alguna vez pero ya no corre
+- no hay valor    -> `SIN SEÑAL`: no llego a correr nunca en este mundo
+
+El `runInterval` importa: al nivel superior del modulo se esta en *early-execution
+mode*, con funciones restringidas, y la sonda fallaria sola. Ya paso una vez.
+
+El parser no se fia de "el ultimo numero de la respuesta": BDS antepone timestamps
+llenos de digitos. Acepta las dos formas plausibles (`salud: 123` y `123 (salud`), y
+`LATIDO_DEBUG=1` deja la respuesta cruda en los logs para poder corregirlo si el
+formato no es ninguna de las dos.

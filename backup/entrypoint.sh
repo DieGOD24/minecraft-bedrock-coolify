@@ -58,6 +58,18 @@ else
   sleep "$BACKUP_INITIAL_DELAY_SECONDS"
 fi
 
+# --- Volcado de la consola de BDS -------------------------------------------
+# Copia lo que escribe el servidor a ESTOS logs, que son los unicos que Coolify
+# devuelve. Sin esto no se ven los errores del motor de scripts ni los
+# console.log de los addons, y diagnosticar es adivinar. Ver bds-tail.sh.
+if [[ -n "${RCON_PASSWORD:-}" ]]; then
+  /usr/local/bin/bds-tail.sh &
+  log "Volcado de la consola de BDS iniciado (prefijo [bds])."
+  # Un margen para que la sesion este abierta antes de mandar nada: lo que se
+  # escriba antes de conectar no se ve.
+  sleep 5
+fi
+
 # --- Comprobaciones por consola ---------------------------------------------
 # Ejecuta comandos sueltos y VUELCA SU RESPUESTA en estos logs. Sirve para probar
 # sintaxis contra el BDS real sin tener que entrar al juego: los console.log de un
@@ -71,7 +83,8 @@ comprobar_consola() {
   while IFS= read -r cmd; do
     cmd="$(printf '%s' "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     [[ -z "$cmd" || "$cmd" == \#* ]] && continue
-    salida=$(/usr/local/bin/console-ssh.sh "$cmd" 2>&1 | grep -v '^###' | tr -d '' | tr -s ' 
+    salida=$(/usr/local/bin/console-ssh.sh "$cmd" 2>&1 | grep -v '^###' | tr -d '
+' | tr -s ' 
 ' ' ')
     log "consola? [$cmd] -> ${salida:-sin respuesta}"
   done <<< "$CONSOLE_CHECKS"
@@ -79,6 +92,46 @@ comprobar_consola() {
 
 if [[ -n "${RCON_PASSWORD:-}" ]]; then
   comprobar_consola
+fi
+
+# --- Latido de los scripts --------------------------------------------------
+# Comprueba que cada pack de script esta VIVO AHORA, no que lo estuvo alguna vez.
+# La sonda anterior era un objetivo de scoreboard, que es persistente: sobrevive
+# al script y sigue ahi aunque el pack este muerto. Dio falsa tranquilidad.
+# Aqui se lee el contador dos veces separadas: si SUBE, el script corre.
+: "${SCRIPT_HEARTBEATS:=}"
+
+leer_latido() {   # $1 = participante -> imprime el numero, o vacio
+  # El formato de `scoreboard players list <jugador>` no esta documentado y BDS
+  # antepone timestamps llenos de digitos, asi que NO vale con "el ultimo numero".
+  # Se aceptan las dos formas plausibles: "salud: 123" y "123 (salud".
+  local cruda
+  cruda=$(/usr/local/bin/console-ssh.sh "scoreboard players list $1" 2>&1 | tr -d '
+' | grep -v '^###')
+  [[ -n "${LATIDO_DEBUG:-}" ]] && log "  latido crudo [$1]: $(printf '%s' "$cruda" | tr -s '[:space:]' ' ')"
+  printf '%s' "$cruda"     | grep -oiE "salud[^0-9-]{0,4}(-?[0-9]+)|(-?[0-9]+)[[:space:]]*\(salud"     | grep -oE '(-?[0-9]+)' | head -1
+}
+
+verificar_latidos() {
+  [[ -z "${SCRIPT_HEARTBEATS//[[:space:]]/}" ]] && return 0
+  local p a b
+  declare -A antes
+  for p in $SCRIPT_HEARTBEATS; do antes[$p]=$(leer_latido "$p"); done
+  sleep 8
+  for p in $SCRIPT_HEARTBEATS; do
+    a="${antes[$p]}"; b=$(leer_latido "$p")
+    if [[ -z "$a" && -z "$b" ]]; then
+      log "LATIDO '$p': SIN SEÑAL -> el script no llego a correr nunca en este mundo"
+    elif [[ -n "$b" && -n "$a" && "$b" != "$a" ]]; then
+      log "LATIDO '$p': VIVO ($a -> $b)"
+    else
+      log "LATIDO '$p': MUERTO (se quedo en '${b:-$a}') -> el pack cargo alguna vez pero ya no corre"
+    fi
+  done
+}
+
+if [[ -n "${RCON_PASSWORD:-}" ]]; then
+  verificar_latidos
 fi
 
 # --- Verificacion de addons -----------------------------------------------
@@ -139,7 +192,8 @@ auto_op() {
     printf '%s' "$lista_online" | grep -qF "$nombre" || continue
     # El nombre va ENTRECOMILLADO: un gamertag con espacio ("sebas GT1858")
     # rompe el parser de BDS -> Syntax error: Unexpected "GT1858".
-    salida=$(/usr/local/bin/console-ssh.sh "op \"$nombre\"" 2>&1 | grep -v '^###' | tr -d '' | tr -s ' 
+    salida=$(/usr/local/bin/console-ssh.sh "op \"$nombre\"" 2>&1 | grep -v '^###' | tr -d '
+' | tr -s ' 
 ' ' ')
     log "op '$nombre' -> ${salida:-sin respuesta}"
   done

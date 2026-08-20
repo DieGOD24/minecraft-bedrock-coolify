@@ -237,6 +237,24 @@ function pintar(form, indice, etiqueta, lore, typeId, cantidad, muestra) {
               durabilidadRestante(muestra), tieneEncantamientos(muestra));
 }
 
+/* Relleno de los huecos libres de la mochila y linea que separa las dos zonas.
+ * Sin esto la rejilla se ve como un bloque continuo y no hay forma de saber donde
+ * acaba la mochila y empieza el inventario. */
+const ICONO_LIBRE = "minecraft:light_gray_stained_glass_pane";
+const ICONO_SEPARADOR = "minecraft:black_stained_glass_pane";
+const FILA = 9;
+
+/* Reabre la mochila DESPUES de que se cierre la pantalla actual.
+ *
+ * Llamar a form.show() dentro del .then() del formulario que se esta cerrando no
+ * funciona: en ese instante Bedrock considera que el jugador sigue ocupado y
+ * devuelve canceled=true con cancelationReason 'UserBusy'. El manejador hacia
+ * return sin decir nada, y desde fuera se veia como "se cierra y no vuelve".
+ */
+function reabrir(player, ranura) {
+  system.runTimeout(function () { abrirMochila(player, ranura); }, 2);
+}
+
 /*
  * POR QUE EL INVENTARIO SE DIBUJA DENTRO DE LA REJILLA
  *
@@ -259,8 +277,14 @@ function pintar(form, indice, etiqueta, lore, typeId, cantidad, muestra) {
  * el inventario se dibuja como casillas normales de la rejilla, que es la unica
  * parte cuyo clic esta demostrado que funciona. Un solo grid, un solo espacio de
  * indices, y el gesto para el jugador no cambia: toca su objeto y se guarda.
+ *
+ * DISPOSICION
+ *
+ *   0 .. huecos-1              la mochila (lo guardado, y el resto en gris)
+ *   huecos .. inicioInv-1      fila separadora, si cabe
+ *   inicioInv ..               tu inventario, etiquetado "Guardar"
  */
-function abrirMochila(player, ranura) {
+function abrirMochila(player, ranura, intento) {
   const c = contenedorDe(player);
   if (!c) return;
   const stack = c.getItem(ranura);
@@ -274,6 +298,7 @@ function abrirMochila(player, ranura) {
   const plano = PLANO.has(player.id);
 
   let form;
+  let inicioInv = def.huecos;
   let mostrados = ranurasInv.length;
 
   if (plano) {
@@ -289,14 +314,19 @@ function abrirMochila(player, ranura) {
       form.button(`§2Guardar §r${n} §7x${it.amount}`);
     }
   } else {
-    // El cofre no cabe mas alla de 54. Si el jugador va cargadisimo se dibujan
-    // los que entran y se avisa: recortar en silencio seria peor.
-    const tamano = tamanoCofre(def.huecos + ranurasInv.length);
-    mostrados = Math.min(ranurasInv.length, tamano - def.huecos);
+    // La separadora solo si hay algo debajo que separar y si no le roba sitio a
+    // los objetos: el cofre no pasa de 54.
+    const separadora = (ranurasInv.length > 0 &&
+                        def.huecos + FILA + ranurasInv.length <= 54) ? FILA : 0;
+    inicioInv = def.huecos + separadora;
 
-    form = new ChestFormData(String(tamano)).title(def.nombre);
+    const tamano = tamanoCofre(inicioInv + ranurasInv.length);
+    mostrados = Math.min(ranurasInv.length, tamano - inicioInv);
 
-    // Arriba, lo que ya hay guardado. Tocarlo lo saca.
+    form = new ChestFormData(String(tamano))
+      .title(`${def.nombre}  §7${lista.length}/${def.huecos}`);
+
+    // Zona 1: lo que ya hay guardado. Tocarlo lo saca.
     for (let i = 0; i < lista.length && i < def.huecos; i++) {
       const o = lista[i];
       let vista;
@@ -307,15 +337,25 @@ function abrirMochila(player, ranura) {
       }
       pintar(form, i, nombreVisible(o), o.l || [], o.t, o.a || 1, vista);
     }
+    // ...y el resto de la mochila en gris, para que la zona se vea entera aunque
+    // este vacia. Un boton sin texto lo hace invisible Chest-UI.
+    for (let i = lista.length; i < def.huecos; i++) {
+      form.button(i, "§7Hueco libre", [], ICONO_LIBRE, 1, 0, false);
+    }
 
-    // Debajo, el inventario del jugador. Tocarlo lo guarda.
+    // Zona 2: la linea que separa las dos mitades.
+    for (let i = def.huecos; i < inicioInv; i++) {
+      form.button(i, "§8▼ Tu inventario ▼", [], ICONO_SEPARADOR, 1, 0, false);
+    }
+
+    // Zona 3: el inventario del jugador. Tocarlo lo guarda.
     for (let k = 0; k < mostrados; k++) {
       const it = c.getItem(ranurasInv[k]);
       if (!it) continue;
       const nombre = it.nameTag || it.typeId.replace("minecraft:", "").replace(/_/g, " ");
       let lore = [];
       try { lore = it.getLore() || []; } catch (e) { lore = []; }
-      pintar(form, def.huecos + k, `§aGuardar §r${nombre}`, lore,
+      pintar(form, inicioInv + k, `§aGuardar §r${nombre}`, lore,
              it.typeId, it.amount, it);
     }
 
@@ -324,23 +364,34 @@ function abrirMochila(player, ranura) {
     }
   }
 
-  diag(player, `abriendo (${plano ? "lista" : "cofre"}): huecos=${def.huecos} guardados=${lista.length} ranurasInv=${ranurasInv.length} mostrados=${mostrados}`);
+  diag(player, `abriendo (${plano ? "lista" : "cofre"}): huecos=${def.huecos} guardados=${lista.length} inicioInv=${inicioInv} ranurasInv=${ranurasInv.length} mostrados=${mostrados}`);
 
   form.show(player).then(function (res) {
     diag(player, `respuesta: canceled=${res.canceled} motivo=${res.cancelationReason} sel=${res.selection}`);
-    if (res.canceled) return;
+
+    // UserBusy = el jugador todavia tiene una pantalla encima; se reintenta. No se
+    // reintenta UserClosed: ahi cerro a proposito y hay que dejarlo en paz.
+    if (res.canceled) {
+      const n = intento || 0;
+      if (res.cancelationReason === "UserBusy" && n < 8) {
+        system.runTimeout(function () { abrirMochila(player, ranura, n + 1); }, 4);
+      }
+      return;
+    }
+
     const sel = res.selection;
     if (sel < def.huecos) {
       if (sel < lista.length) sacarUno(player, ranura, sel);
-      else abrirMochila(player, ranura);   // hueco vacio: se reabre
+      else reabrir(player, ranura);        // hueco libre: no hay nada que sacar
       return;
     }
-    const idx = sel - def.huecos;
-    const origen = ranurasInv[idx];
-    if (origen === undefined) { abrirMochila(player, ranura); return; }
+    if (sel < inicioInv) { reabrir(player, ranura); return; }   // la separadora
+
+    const origen = ranurasInv[sel - inicioInv];
+    if (origen === undefined) { reabrir(player, ranura); return; }
     if (origen === ranura) {
       player.sendMessage("§7Esa es la mochila que tenes abierta.");
-      abrirMochila(player, ranura);
+      reabrir(player, ranura);
       return;
     }
     meterUno(player, ranura, origen);
@@ -363,18 +414,18 @@ function sacarUno(player, ranura, indice) {
 
   if (c.emptySlotsCount === 0) {
     player.sendMessage("§cNo tenes espacio libre en el inventario.");
-    abrirMochila(player, ranura);
+    reabrir(player, ranura);
     return;
   }
   const sobra = c.addItem(deserializar(o));
   if (sobra) {
     player.sendMessage("§cNo entro; queda en la mochila.");
-    abrirMochila(player, ranura);
+    reabrir(player, ranura);
     return;
   }
   lista.splice(indice, 1);
   guardarEnRanura(player, ranura, escribirContenido(stack, lista));
-  abrirMochila(player, ranura);
+  reabrir(player, ranura);
 }
 
 function meterUno(player, ranura, ranuraOrigen) {
@@ -382,31 +433,31 @@ function meterUno(player, ranura, ranuraOrigen) {
   if (!c) return;
   const stack = c.getItem(ranura);
   const origen = c.getItem(ranuraOrigen);
-  if (!stack || !MOCHILAS[stack.typeId] || !origen) { abrirMochila(player, ranura); return; }
+  if (!stack || !MOCHILAS[stack.typeId] || !origen) { reabrir(player, ranura); return; }
 
   const def = MOCHILAS[stack.typeId];
   const lista = leerContenido(stack);
   if (lista.length >= def.huecos) {
     player.sendMessage("§cLa mochila esta llena.");
-    abrirMochila(player, ranura);
+    reabrir(player, ranura);
     return;
   }
   const motivo = motivoBloqueo(origen);
   if (motivo) {
     player.sendMessage(`§cNo entra: ${motivo}.`);
-    abrirMochila(player, ranura);
+    reabrir(player, ranura);
     return;
   }
   if (!conservaEncantamientos() && tieneEncantamientos(origen)) {
     player.sendMessage("§cNo entra: los encantamientos se perderian.");
-    abrirMochila(player, ranura);
+    reabrir(player, ranura);
     return;
   }
 
   lista.push(serializar(origen));
   c.setItem(ranuraOrigen, undefined);
   guardarEnRanura(player, ranura, escribirContenido(stack, lista));
-  abrirMochila(player, ranura);
+  reabrir(player, ranura);
 }
 
 /* ---------- eventos ---------- */

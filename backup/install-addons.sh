@@ -174,8 +174,11 @@ cambio=0
 [[ ${#bp_json[@]} -gt 0 ]] && { escribir "$WORLD/world_behavior_packs.json" "${bp_json[@]}" && cambio=1; }
 [[ ${#rp_json[@]} -gt 0 ]] && { escribir "$WORLD/world_resource_packs.json" "${rp_json[@]}" && cambio=1; }
 
+# El aviso de reiniciar no basta: nadie lo ejecutaba y eso dejo el servidor sin
+# poder recibir jugadores. Se sale con 10 para que entrypoint.sh lo automatice.
 if [[ $cambio -eq 1 ]]; then
   log "ACTIVACION ACTUALIZADA. Hace falta REINICIAR el servidor para que cargue los addons."
-else
-  log "Addons ya activos, sin cambios."
+  exit 10
 fi
+log "Addons ya activos, sin cambios."
+exit 0

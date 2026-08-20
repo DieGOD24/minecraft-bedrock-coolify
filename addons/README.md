@@ -547,3 +547,46 @@ solo grid, un solo espacio de indices, y el gesto no cambia.
 `selection` sin definir no significa que el jugador cerrase la pantalla a
 proposito. Significa que el toque **no dio en ningun boton**. Es la firma de una
 casilla que se ve pero no existe.
+
+## Cambiar un resource pack deja un arranque sin poder recibir jugadores
+
+El sidecar arranca **despues** de que BDS ya cargo el mundo. Cuando cambia el
+contenido de un resource pack propio, `install-addons.sh` le sube la version por
+contenido y reescribe `world_resource_packs.json` **por debajo del servidor ya
+arrancado**. BDS queda ofreciendo una version que no coincide con la que tiene
+cargada, el cliente no completa la descarga y, con `TEXTUREPACK_REQUIRED=true`,
+no llega a aparecer.
+
+La firma en los logs es inconfundible:
+
+```
+[bds] Player connected: <jugador>
+```
+
+...y ningun `Player Spawned` detras. El jugador ve que se queda cargando.
+
+El aviso "hace falta REINICIAR el servidor" ya estaba escrito desde el principio.
+Lo que faltaba era que alguien lo ejecutara. Ahora `install-addons.sh` sale con
+codigo **10** cuando reescribe la activacion y `entrypoint.sh` manda `stop` por
+consola: con `restart: unless-stopped` el contenedor vuelve solo y el arranque
+siguiente ya sale limpio.
+
+Lleva **cortacircuitos**: como maximo 3 reinicios en 10 minutos, contados en
+`/data/.reinicio-por-addons`. En el camino normal se dispara una sola vez, asi que
+ese limite no se toca; esta para que un pack cuyo hash cambiara en cada arranque
+no deje el servidor en bucle.
+
+## Un formulario no se puede actualizar en sitio
+
+La vista de cofre es un `ActionFormData` reskineado, y un ActionForm **no se puede
+modificar mientras esta abierto**. Cada vez que se guarda o se saca algo hay que
+cerrarlo y volver a abrirlo. El parpadeo es inevitable con esta API.
+
+Y la reapertura **no puede ser sincrona**: llamar a `form.show()` dentro del
+`.then()` del formulario que se esta cerrando devuelve `canceled=true` con
+`cancelationReason: "UserBusy"`, porque en ese instante el jugador todavia cuenta
+como ocupado. El sintoma es "se cierra y no vuelve". Hay que diferirla con
+`system.runTimeout` y reintentar mientras siga saliendo `UserBusy`.
+
+`UserClosed` es lo contrario y **no** se reintenta: ahi el jugador cerro a
+proposito.

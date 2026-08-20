@@ -22,9 +22,58 @@ log "Para disparar un backup a mano: docker exec <contenedor-backup> /usr/local/
 /usr/local/bin/fix-permissions.sh
 
 # --- Addons ---------------------------------------------------------------
-# Se corre antes que nada: si cambia la activacion, hay que reiniciar y conviene
+# Se corre antes que nada: si cambia la activacion hay que reiniciar, y conviene
 # que quede avisado arriba del todo en los logs.
+#
+# POR QUE HAY QUE REINICIAR, Y POR QUE SE HACE SOLO:
+# este sidecar arranca DESPUES de que BDS ya cargo el mundo. Cuando cambia el
+# contenido de un resource pack propio, install-addons.sh le sube la version y
+# reescribe world_resource_packs.json por debajo del servidor ya arrancado. BDS
+# queda ofreciendo una version que no coincide con la que tiene cargada, el
+# cliente no completa la descarga y, con TEXTUREPACK_REQUIRED=true, NO LLEGA A
+# APARECER: en el log sale "Player connected" sin ningun "Player Spawned".
+#
+# Paso de verdad y dejo al servidor sin poder recibir a nadie hasta reiniciar a
+# mano. El aviso "hace falta REINICIAR" ya estaba escrito; lo que faltaba era
+# que alguien lo ejecutara.
+#
+# `stop` apaga BDS limpiamente y `restart: unless-stopped` lo levanta de nuevo.
+# En ese segundo arranque la activacion ya esta bien y esto no se repite: el
+# contador de version va por hash de CONTENIDO, asi que si nada cambio, nada
+# sube. Aun asi se dispara UNA sola vez por arranque del contenedor.
 /usr/local/bin/install-addons.sh
+if [[ $? -eq 10 ]]; then
+  # CORTACIRCUITOS. Este reinicio es la unica cosa aqui capaz de dejar el
+  # servidor en un bucle de arranques, asi que se limita a 3 en 10 minutos. En
+  # el camino normal se dispara UNA vez y el arranque siguiente ya dice "sin
+  # cambios", asi que el limite no se toca nunca.
+  marca=/data/.reinicio-por-addons
+  ahora=$(date +%s)
+  leido=$(cat "$marca" 2>/dev/null)
+  prev_t=${leido%% *}; prev_n=${leido##* }
+  [[ "$prev_t" =~ ^[0-9]+$ ]] || prev_t=0
+  [[ "$prev_n" =~ ^[0-9]+$ ]] || prev_n=0
+  if (( ahora - prev_t < 600 )); then veces=$((prev_n + 1)); else veces=1; fi
+  echo "$ahora $veces" > "$marca"
+
+  log "================================================================"
+  if (( veces > 3 )); then
+    log "ERROR: $veces reinicios por activacion en menos de 10 minutos."
+    log "NO se reinicia otra vez para no entrar en bucle. Algo hace cambiar el"
+    log "hash de un pack en cada arranque; hay que mirarlo a mano."
+    log "================================================================"
+  else
+    log "La activacion de addons cambio. Reiniciando BDS para que la cargue"
+    log "(intento $veces de 3). Sin esto, quien intente entrar se queda en"
+    log "'connected' sin llegar a aparecer."
+    log "================================================================"
+    if wait_for_bds && send_console "stop"; then
+      log "Enviado 'stop'. El contenedor vuelve solo y el proximo arranque sale limpio."
+      exit 0
+    fi
+    log "ERROR: no pude reiniciar BDS. HAY QUE REINICIAR A MANO o nadie podra entrar."
+  fi
+fi
 
 # --- Volcado de la consola de BDS -------------------------------------------
 # Copia lo que escribe el servidor a ESTOS logs, que son los unicos que Coolify

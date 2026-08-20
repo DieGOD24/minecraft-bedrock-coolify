@@ -400,6 +400,9 @@ world.afterEvents.itemUse.subscribe((ev) => {
  *                                    boton y misma logica: si esta funciona, lo
  *                                    roto es solo la rejilla de cofre.
  *   /scriptevent cerebria:cofre      vuelve a la vista de cofre.
+ *   /scriptevent cerebria:chesttest  cofre de prueba con las 9 casillas
+ *                                    LLENAS, para separar la rejilla de la
+ *                                    fila del inventario.
  *
  * Todo el bloque va en try/catch: un diagnostico no debe poder tumbar la
  * funcionalidad que intenta diagnosticar. El latido, en cambio, se queda al
@@ -419,6 +422,29 @@ try {
     if (ev.id === "cerebria:cofre") {
       PLANO.delete(player.id);
       player.sendMessage("§aMochila en vista de COFRE. Abrila otra vez.");
+      return;
+    }
+    /* Cofre de prueba con las casillas LLENAS.
+     *
+     * Hace falta porque el fallo real se dio con la mochila VACIA: Chest-UI hace
+     * invisible (y por tanto no clicable) todo hueco sin texto, asi que lo unico
+     * que se podia tocar era la fila del inventario. Esa fila la dibuja
+     * chest_inventory_system.json, que es OTRO archivo que el de la rejilla.
+     *
+     * Con las 9 casillas llenas se puede tocar una de arriba y otra de abajo y
+     * ver cual de las dos mitades responde. */
+    if (ev.id === "cerebria:chesttest") {
+      system.run(function () {
+        const f = new ChestFormData("9").title("Prueba de cofre");
+        for (let i = 0; i < 9; i++) {
+          f.button(i, `Casilla ${i}`, [], "minecraft:diamond", i + 1, 0, false);
+        }
+        f.show(player).then(function (res) {
+          player.sendMessage(`§8[dbg] §7chesttest: canceled=${res.canceled} motivo=${res.cancelationReason} sel=${res.selection}`);
+        }).catch(function (e) {
+          player.sendMessage(`§8[dbg] §cchesttest ERROR: ${e}`);
+        });
+      });
       return;
     }
     if (ev.id !== "cerebria:formtest") return;

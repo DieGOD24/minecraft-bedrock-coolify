@@ -521,3 +521,29 @@ Dos reglas que salieron de esto:
   positivo justo en el caso que importa.
 - **Los bloques de diagnostico van en `try/catch`.** Un diagnostico no debe
   poder tumbar la funcionalidad que intenta diagnosticar.
+
+## La fila de inventario de Chest-UI dibuja una cosa y pulsa otra
+
+Chest-UI trae debajo del cofre una fila con el inventario del jugador, y es la
+forma natural de guardar: tocas tu objeto y entra. **No funciona.** Medido:
+
+| Donde se toca | Respuesta |
+|---|---|
+| rejilla del cofre, casilla llena | `canceled=false sel=8` — correcto |
+| fila de inventario, objeto propio | `canceled=false sel=1` — indice de la rejilla |
+| fila de inventario, mochila vacia | `canceled=true UserClosed sel=undefined` |
+
+La fila muestra los objetos correctos, asi que el binding de display resuelve con
+el desplazamiento bueno y el del clic no. Y con la mochila vacia los botones de la
+rejilla no tienen texto: Chest-UI los hace invisibles, el toque cae al fondo y
+Bedrock cierra la pantalla. Ese `UserClosed` era todo el sintoma de "no me deja
+guardar".
+
+La salida es no usar esa fila (`$show_inventory` e `inventory_enabled` en false) y
+dibujar el inventario como casillas normales de la rejilla, que si responde. Un
+solo grid, un solo espacio de indices, y el gesto no cambia.
+
+**Leccion mas general**: `canceled=true` con `cancelationReason: UserClosed` y
+`selection` sin definir no significa que el jugador cerrase la pantalla a
+proposito. Significa que el toque **no dio en ningun boton**. Es la firma de una
+casilla que se ve pero no existe.

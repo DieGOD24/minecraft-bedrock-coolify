@@ -2419,7 +2419,12 @@ const typeIdToDataId = new Map([
  * Turns the logic for inventory slots on/off. Only set this to false if you have disabled inventory in RP/ui/_global_variables.json side!
  * Disabling this may also reduce form opening lag a bit.
  */
-const inventory_enabled = true;
+// MODIFICADO: apagado. Con esto en true, show() anade el inventario del jugador
+// como botones extra al final, y esa fila de Chest-UI devuelve indices que no
+// se corresponden con lo que dibuja. El inventario se dibuja ahora dentro de la
+// propia rejilla desde abrirMochila(). Va junto con $show_inventory:false en
+// RP/ui/_global_variables.json: uno oculta los paneles, este evita los botones.
+const inventory_enabled = false;
 /**
  * Defines the custom block & item IDs for the form.
  * You can reference either a vanilla texture icon, which functions identically to other items...
@@ -2736,10 +2741,10 @@ const PROP = "cerebria:contenido";
  * El unico canal que si llega a una persona es el chat del propio jugador.
  * Cuando la mochila vuelva a funcionar, poner DIAG en false.
  */
-const DIAG = true;
+const DEPURA = new Set();   // jugadores con el diagnostico encendido
 function diag(player, texto) {
   console.warn(`[mochilas] ${texto}`);
-  if (!DIAG) return;
+  if (!player || !DEPURA.has(player.id)) return;
   try { player.sendMessage(`§8[dbg] §7${texto}`); } catch (e) { }
 }
 
@@ -2909,6 +2914,48 @@ function nombreVisible(o) {
   return o.n || o.t.replace("minecraft:", "").replace(/_/g, " ");
 }
 
+// Tamanos de cofre que ofrece Chest-UI. Todos estan activados en
+// _global_variables.json, asi que cualquiera vale.
+const TAMANOS = [9, 18, 27, 36, 45, 54];
+
+// El cofre crece para que quepan los huecos de la mochila MAS los objetos que
+// lleva encima el jugador, porque ahora las dos cosas van en la misma rejilla.
+function tamanoCofre(necesarios) {
+  for (const t of TAMANOS) if (t >= necesarios) return t;
+  return 54;
+}
+
+// Pinta un objeto real del inventario o de la mochila en una casilla del cofre.
+// `etiqueta` es lo que se lee al tocarla; el resto es lo que Chest-UI necesita
+// para dibujar el icono, la cantidad, el desgaste y el brillo de encantado.
+function pintar(form, indice, etiqueta, lore, typeId, cantidad, muestra) {
+  form.button(indice, etiqueta, lore, typeId, cantidad,
+              durabilidadRestante(muestra), tieneEncantamientos(muestra));
+}
+
+/*
+ * POR QUE EL INVENTARIO SE DIBUJA DENTRO DE LA REJILLA
+ *
+ * Chest-UI trae su propia fila de inventario debajo del cofre, y era la forma
+ * natural de guardar: tocas tu objeto y entra. No funciona. Se midio en el juego:
+ *
+ *   rejilla del cofre, casilla llena  -> canceled=false sel=8   (indice correcto)
+ *   fila de inventario, objeto propio -> canceled=false sel=1   (indice de la rejilla)
+ *   fila de inventario, mochila vacia -> canceled=true UserClosed sel=undefined
+ *
+ * Y la fila SI muestra los objetos correctos. O sea: lo que se dibuja y lo que se
+ * pulsa no coinciden. Con la mochila vacia los botones 0..8 no tienen texto,
+ * Chest-UI los hace invisibles, el toque cae al fondo y Bedrock cierra la
+ * pantalla -- ese era el "no me deja guardar" del principio.
+ *
+ * Los archivos de Chest-UI son byte a byte identicos al upstream y estamos en su
+ * ultimo commit, asi que no es cosa nuestra ni hay arreglo rio arriba.
+ *
+ * La salida es no usar esa fila: se apaga ($show_inventory / inventory_enabled) y
+ * el inventario se dibuja como casillas normales de la rejilla, que es la unica
+ * parte cuyo clic esta demostrado que funciona. Un solo grid, un solo espacio de
+ * indices, y el gesto para el jugador no cambia: toca su objeto y se guarda.
+ */
 function abrirMochila(player, ranura) {
   const c = contenedorDe(player);
   if (!c) return;
@@ -2918,12 +2965,13 @@ function abrirMochila(player, ranura) {
   const def = MOCHILAS[stack.typeId];
   const lista = leerContenido(stack);
   // Las ranuras del inventario que se dibujan DESPUES de los huecos, en su mismo
-  // orden. Se calcula antes de construir el formulario porque las dos vistas la
-  // necesitan y tiene que ser exactamente la misma lista que recorre show().
+  // orden. Es lo que traduce el boton pulsado a una ranura real del inventario.
   const ranurasInv = ranurasConItems(c);
   const plano = PLANO.has(player.id);
 
   let form;
+  let mostrados = ranurasInv.length;
+
   if (plano) {
     form = new ActionFormData().title(def.nombre)
       .body("§7Vista de lista. Volve al cofre con §f/scriptevent cerebria:cofre");
@@ -2937,7 +2985,14 @@ function abrirMochila(player, ranura) {
       form.button(`§2Guardar §r${n} §7x${it.amount}`);
     }
   } else {
-    form = new ChestFormData(String(def.huecos)).title(def.nombre);
+    // El cofre no cabe mas alla de 54. Si el jugador va cargadisimo se dibujan
+    // los que entran y se avisa: recortar en silencio seria peor.
+    const tamano = tamanoCofre(def.huecos + ranurasInv.length);
+    mostrados = Math.min(ranurasInv.length, tamano - def.huecos);
+
+    form = new ChestFormData(String(tamano)).title(def.nombre);
+
+    // Arriba, lo que ya hay guardado. Tocarlo lo saca.
     for (let i = 0; i < lista.length && i < def.huecos; i++) {
       const o = lista[i];
       let vista;
@@ -2946,12 +3001,26 @@ function abrirMochila(player, ranura) {
       } catch (e) {
         continue;   // entrada corrupta: se salta en vez de romper la apertura
       }
-      form.button(i, nombreVisible(o), o.l || [], o.t, o.a || 1,
-                  durabilidadRestante(vista), tieneEncantamientos(vista));
+      pintar(form, i, nombreVisible(o), o.l || [], o.t, o.a || 1, vista);
+    }
+
+    // Debajo, el inventario del jugador. Tocarlo lo guarda.
+    for (let k = 0; k < mostrados; k++) {
+      const it = c.getItem(ranurasInv[k]);
+      if (!it) continue;
+      const nombre = it.nameTag || it.typeId.replace("minecraft:", "").replace(/_/g, " ");
+      let lore = [];
+      try { lore = it.getLore() || []; } catch (e) { lore = []; }
+      pintar(form, def.huecos + k, `§aGuardar §r${nombre}`, lore,
+             it.typeId, it.amount, it);
+    }
+
+    if (mostrados < ranurasInv.length) {
+      player.sendMessage(`§7Quedaron ${ranurasInv.length - mostrados} objetos sin mostrar: no caben en el cofre.`);
     }
   }
 
-  diag(player, `abriendo (${plano ? "lista" : "cofre"}): huecos=${def.huecos} guardados=${lista.length} ranurasInv=${ranurasInv.length}`);
+  diag(player, `abriendo (${plano ? "lista" : "cofre"}): huecos=${def.huecos} guardados=${lista.length} ranurasInv=${ranurasInv.length} mostrados=${mostrados}`);
 
   form.show(player).then(function (res) {
     diag(player, `respuesta: canceled=${res.canceled} motivo=${res.cancelationReason} sel=${res.selection}`);
@@ -3091,6 +3160,9 @@ world.afterEvents.itemUse.subscribe((ev) => {
  *                                    boton y misma logica: si esta funciona, lo
  *                                    roto es solo la rejilla de cofre.
  *   /scriptevent cerebria:cofre      vuelve a la vista de cofre.
+ *   /scriptevent cerebria:debug      enciende o apaga las lineas [dbg]. Apagado
+ *                                    por defecto para no llenar el chat, pero el
+ *                                    canal se queda: costo demasiado conseguirlo.
  *   /scriptevent cerebria:chesttest  cofre de prueba con las 9 casillas
  *                                    LLENAS, para separar la rejilla de la
  *                                    fila del inventario.
@@ -3105,6 +3177,16 @@ try {
     const player = ev.sourceEntity;
     if (!player || player.typeId !== "minecraft:player") return;
 
+    if (ev.id === "cerebria:debug") {
+      if (DEPURA.has(player.id)) {
+        DEPURA.delete(player.id);
+        player.sendMessage("§7Diagnostico APAGADO.");
+      } else {
+        DEPURA.add(player.id);
+        player.sendMessage("§aDiagnostico ENCENDIDO: vas a ver las lineas [dbg] al abrir y al tocar.");
+      }
+      return;
+    }
     if (ev.id === "cerebria:plana") {
       PLANO.add(player.id);
       player.sendMessage("§aMochila en vista de LISTA. Abrila otra vez.");

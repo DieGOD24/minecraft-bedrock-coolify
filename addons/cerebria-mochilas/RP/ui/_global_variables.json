@@ -1,5 +1,12 @@
 {
-	"$show_inventory": true, // Set to false if don't want to show inventory. Not recommended for low end devices.
+	// APAGADO A PROPOSITO (desviacion del upstream). En la fila de inventario de
+	// Chest-UI lo que se DIBUJA y lo que se PULSA no coinciden: se midio en el
+	// juego que muestra los objetos correctos y devuelve indices de la rejilla
+	// (sel=1 al tocar la barra rapida), y con la mochila vacia esos botones son
+	// invisibles, asi que el toque cae al fondo y sale UserClosed.
+	// El inventario del jugador se dibuja ahora DENTRO de la rejilla, que si
+	// responde bien. Ver abrirMochila() en src/mochilas.js.
+	"$show_inventory": false,
 	"$border_and_background_texture": "textures/ui/dialog_background_opaque", // Add your own texture for background and border here. Edit `textures/ui/item_background` to change slot texture.
 	/*
 		*It is important to only enable the layouts that you're going to use and disable others to decrease lag*

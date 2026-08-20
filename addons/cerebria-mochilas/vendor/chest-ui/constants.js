@@ -2,7 +2,12 @@
  * Turns the logic for inventory slots on/off. Only set this to false if you have disabled inventory in RP/ui/_global_variables.json side!
  * Disabling this may also reduce form opening lag a bit.
  */
-export const inventory_enabled = true;
+// MODIFICADO: apagado. Con esto en true, show() anade el inventario del jugador
+// como botones extra al final, y esa fila de Chest-UI devuelve indices que no
+// se corresponden con lo que dibuja. El inventario se dibuja ahora dentro de la
+// propia rejilla desde abrirMochila(). Va junto con $show_inventory:false en
+// RP/ui/_global_variables.json: uno oculta los paneles, este evita los botones.
+export const inventory_enabled = false;
 /**
  * Defines the custom block & item IDs for the form.
  * You can reference either a vanilla texture icon, which functions identically to other items...

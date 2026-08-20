@@ -786,6 +786,35 @@ system.runInterval(() => {
   }
 }, 20);
 
+/* ---------- reentrega del kit a pedido ----------
+ * /scriptevent cerebria:kit  vuelve a dar el kit de inicio (mochila incluida).
+ *
+ * entregarKit() se autobloquea con una propiedad dinamica para no repetirse en
+ * cada reconexion; aqui se borra esa marca antes de llamarlo. Sirve para probar
+ * la mochila sin tener que generar un mundo nuevo.
+ *
+ * Va por scriptevent y no por chat: world.beforeEvents.chatSend es EXPERIMENTAL
+ * y su suscripcion tumba el pack entero si no hay Beta APIs. Como todos entran
+ * como operador, se escribe tal cual en el chat.
+ *
+ * En try/catch para que un fallo aqui no se lleve el HUD por delante.
+ */
+try {
+  system.afterEvents.scriptEventReceive.subscribe(function (ev) {
+    if (ev.id !== "cerebria:kit") return;
+    const player = ev.sourceEntity;
+    if (!player || player.typeId !== "minecraft:player") return;
+    try {
+      player.setDynamicProperty(PROP_KIT, undefined);
+      entregarKit(player);
+    } catch (e) {
+      player.sendMessage(`§cNo pude entregar el kit: ${e}`);
+    }
+  }, { namespaces: ["cerebria"] });
+} catch (e) {
+  console.warn(`[cerebria-hud] no pude registrar /scriptevent cerebria:kit: ${e}`);
+}
+
 /* ---------- latido: prueba de que este script sigue VIVO ----------
  * Un objetivo de scoreboard es PERSISTENTE: vive en el mundo. Que exista solo
  * prueba que el script corrio alguna vez, no que corra ahora. La sonda anterior

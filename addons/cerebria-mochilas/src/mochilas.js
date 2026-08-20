@@ -235,7 +235,7 @@ function abrirMochila(player, ranura) {
   let form;
   if (plano) {
     form = new ActionFormData().title(def.nombre)
-      .body("§7Vista de lista. Volve al cofre con §f!mochilacofre");
+      .body("§7Vista de lista. Volve al cofre con §f/scriptevent cerebria:cofre");
     for (let i = 0; i < def.huecos; i++) {
       const o = lista[i];
       form.button(o ? `${nombreVisible(o)} §7x${o.a || 1}` : "§8(vacio)");
@@ -381,55 +381,67 @@ world.afterEvents.itemUse.subscribe((ev) => {
   } catch (e) { /* ignorado */ }
 });
 
-/* ---------- comandos de chat para separar causas ----------
- * Sabemos que el script CORRE (el latido sube) y que la rejilla de cofre SE
- * DIBUJA, pero el clic no hace nada. Faltaba distinguir dos cosas que se
- * confunden, y sin logs de script no habia forma:
+/* ---------- comandos para separar causas ----------
+ * Van por /scriptevent y NO por chat. `world.beforeEvents.chatSend` es
+ * EXPERIMENTAL: usarlo obliga a activar Beta APIs y, sin ellas, la suscripcion
+ * lanza al evaluar el modulo y se lleva por delante el PACK ENTERO. Paso: el
+ * latido lo canto en la primera lectura ("MUERTO"), que es exactamente para lo
+ * que se puso. cerebria-hud ya tenia escrita esa advertencia.
+ * `system.afterEvents.scriptEventReceive` si es estable.
  *
- *   !formtest      abre un ActionForm NORMAL, sin Chest-UI. Si tampoco responde,
- *                  lo roto son TODOS los formularios en el cliente, y el
- *                  sospechoso es el override de ui/server_form.json que trae
- *                  Chest-UI. Eso explicaria de paso que la brujula no responda.
- *   !mochilaplana  dibuja la mochila como lista. Mismos indices de boton, misma
- *                  logica: si esta si funciona, lo roto es solo la rejilla.
- *   !mochilacofre  vuelve a la vista de cofre.
+ * Como todos entran como operador, se escriben en el chat tal cual:
+ *   /scriptevent cerebria:formtest   formulario NORMAL, sin Chest-UI. Si este
+ *                                    tampoco responde, lo roto son TODOS los
+ *                                    formularios en el cliente, y el sospechoso
+ *                                    es el override de ui/server_form.json que
+ *                                    trae Chest-UI -- lo que explicaria ademas
+ *                                    que la brujula no responda.
+ *   /scriptevent cerebria:plana      mochila como lista. Mismos indices de
+ *                                    boton y misma logica: si esta funciona, lo
+ *                                    roto es solo la rejilla de cofre.
+ *   /scriptevent cerebria:cofre      vuelve a la vista de cofre.
  *
- * chatSend es un beforeEvent (solo lectura), asi que mostrar el formulario va
- * dentro de system.run.
+ * Todo el bloque va en try/catch: un diagnostico no debe poder tumbar la
+ * funcionalidad que intenta diagnosticar. El latido, en cambio, se queda al
+ * FINAL del archivo a proposito: asi "VIVO" significa que el modulo entero se
+ * evaluo, no solo su principio.
  */
-world.beforeEvents.chatSend.subscribe((ev) => {
-  const orden = ev.message.trim().toLowerCase();
-  if (orden !== "!formtest" && orden !== "!mochilaplana" && orden !== "!mochilacofre") return;
-  ev.cancel = true;
-  const player = ev.sender;
+try {
+  system.afterEvents.scriptEventReceive.subscribe(function (ev) {
+    const player = ev.sourceEntity;
+    if (!player || player.typeId !== "minecraft:player") return;
 
-  if (orden === "!mochilaplana") {
-    PLANO.add(player.id);
-    system.run(() => player.sendMessage("§aMochila en vista de LISTA. Abrila otra vez."));
-    return;
-  }
-  if (orden === "!mochilacofre") {
-    PLANO.delete(player.id);
-    system.run(() => player.sendMessage("§aMochila en vista de COFRE. Abrila otra vez."));
-    return;
-  }
+    if (ev.id === "cerebria:plana") {
+      PLANO.add(player.id);
+      player.sendMessage("§aMochila en vista de LISTA. Abrila otra vez.");
+      return;
+    }
+    if (ev.id === "cerebria:cofre") {
+      PLANO.delete(player.id);
+      player.sendMessage("§aMochila en vista de COFRE. Abrila otra vez.");
+      return;
+    }
+    if (ev.id !== "cerebria:formtest") return;
 
-  system.run(function () {
-    new ActionFormData()
-      .title("Prueba de formulario")
-      .body("Toca cualquier boton. La respuesta sale en el chat.")
-      .button("Boton A")
-      .button("Boton B")
-      .button("Boton C")
-      .show(player)
-      .then(function (res) {
-        player.sendMessage(`§8[dbg] §7formtest: canceled=${res.canceled} motivo=${res.cancelationReason} sel=${res.selection}`);
-      })
-      .catch(function (e) {
-        player.sendMessage(`§8[dbg] §cformtest ERROR: ${e}`);
-      });
-  });
-});
+    system.run(function () {
+      new ActionFormData()
+        .title("Prueba de formulario")
+        .body("Toca cualquier boton. La respuesta sale en el chat.")
+        .button("Boton A")
+        .button("Boton B")
+        .button("Boton C")
+        .show(player)
+        .then(function (res) {
+          player.sendMessage(`§8[dbg] §7formtest: canceled=${res.canceled} motivo=${res.cancelationReason} sel=${res.selection}`);
+        })
+        .catch(function (e) {
+          player.sendMessage(`§8[dbg] §cformtest ERROR: ${e}`);
+        });
+    });
+  }, { namespaces: ["cerebria"] });
+} catch (e) {
+  console.warn(`[mochilas] no pude registrar los comandos de diagnostico: ${e}`);
+}
 
 /* ---------- latido: prueba de que este script sigue VIVO ----------
  * Un objetivo de scoreboard es PERSISTENTE: vive en el mundo. Que exista solo

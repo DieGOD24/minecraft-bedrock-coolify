@@ -498,3 +498,26 @@ Mientras eso no este confirmado, el unico canal fiable hacia una persona es
 `player.sendMessage()`. Por eso `mochilas.js` tiene un `diag()` que escribe a los
 dos sitios y unos comandos de chat (`!formtest`, `!mochilaplana`, `!mochilacofre`)
 para separar causas sin depender de los logs.
+
+## `world.beforeEvents.chatSend` tumba el pack entero
+
+Es EXPERIMENTAL. Sin Beta APIs activadas, `world.beforeEvents.chatSend` es
+`undefined` y la suscripcion lanza **al evaluar el modulo**, asi que no muere el
+comando: muere el pack completo, y en silencio.
+
+Paso de verdad: se anadieron unos comandos de chat de diagnostico al pack de
+mochilas y en la lectura siguiente el sidecar reporto
+`LATIDO 'mochilas': MUERTO`. La advertencia ya estaba escrita en
+`cerebria-hud/BP/scripts/main.js`, junto al manejador de la brujula.
+
+Para comandos hay que usar `system.afterEvents.scriptEventReceive`, que es
+estable, y escribirlos en el chat como `/scriptevent cerebria:loquesea`. Todos
+entran como operador, asi que cualquiera puede.
+
+Dos reglas que salieron de esto:
+
+- **El latido va al FINAL del archivo.** Asi `VIVO` significa que el modulo
+  entero se evaluo, no solo su principio. Ponerlo arriba lo volveria un falso
+  positivo justo en el caso que importa.
+- **Los bloques de diagnostico van en `try/catch`.** Un diagnostico no debe
+  poder tumbar la funcionalidad que intenta diagnosticar.
